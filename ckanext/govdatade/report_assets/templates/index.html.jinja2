@@ -1,0 +1,27 @@
+{% extends "layout.html.jinja2" %}
+{% block body %}
+<h1>&Uuml;bersicht</h1>
+<p>Um die Qualit&auml;t der Metadaten auf <a href="https://www.govdata.de" target="_blank">GovData.de</a> nachhaltig sicherzustellen werden eine Reihe von Werkzeugen eingesetzt. Aufgabe der Werkzeuge ist die Feststellung und Lokalisierung von potentiellen M&auml;ngeln und die transparente Kommunikation dieser.</p>
+<div class="row">
+  <div class="col-md-12">
+    <h2>Verweispr&uuml;fer</h2>
+    <p>Anzahl der Metadaten die von toten Links betroffen sind: {{ linkchecker.broken }} von {{ num_datasets }}</p>
+    <div class="row">
+      <div class="col-md-6">
+        <div id="linkchecker-pie-chart"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="row">
+  <div class="col-md-12">
+    <h2>Schemapr&uuml;fer</h2>
+    <p>Anzahl der Metadaten die von Schemafehlern betroffen sind: {{ schemachecker.broken }} von {{ num_datasets }}</p>
+    <div class="row">
+      <div class="col-md-6">
+        <div id="schemachecker-pie-chart"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

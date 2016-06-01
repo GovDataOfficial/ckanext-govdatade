@@ -1,0 +1,194 @@
+buildscript {
+    repositories {
+        mavenLocal()
+    }
+}
+
+repositories   { maven { url "http://maven2.seitenbau.net/artifactory/all" } }
+configurations { debAntTask }
+dependencies   { debAntTask 'org.vafer:jdeb:1.4' }
+
+
+task reinstallCkan << {
+  exec("sudo dpkg -r ckan")
+  exec("sudo dpkg -i /artifacts/3dparty/deb/ckan/ckan-2.3.deb")
+}
+
+task downloadAndInstallBaseRequirements (dependsOn:["reinstallCkan"]) << {
+  // Set pip cache directory
+  exec("export XDG_CACHE_HOME=/home/jenkins")
+
+  // Activate python environment
+  exec(". /usr/lib/ckan/env/bin/activate")
+
+  exec("sudo /usr/lib/ckan/env/bin/pip install -U pip --download requirements")
+  exec("sudo /usr/lib/ckan/env/bin/pip install -U setuptools --download requirements")
+  exec("sudo /usr/lib/ckan/env/bin/pip install -U wheel --download requirements")
+
+  // Install base-requirements
+  exec("sudo /usr/lib/ckan/env/bin/pip install -f requirements -r base-requirements.txt")
+
+  // Write installed packages to requirements.txt
+  exec("sudo /usr/lib/ckan/env/bin/pip freeze > requirements.txt")
+  exec("cat requirements.txt")
+
+  // Create local package directory for requirements
+  exec("mkdir requirements")
+
+   // Download requirements
+  def pipExitCode = exec("sudo /usr/lib/ckan/env/bin/pip install --download requirements -f requirements -r requirements.txt")
+  if(pipExitCode > 0) {
+    throw new GradleException('Failed to download requirements!')
+  }
+}
+
+task lint (dependsOn:["replaceExternalDevDependencies"]) << {
+  // Set pip cache directory
+  exec("export XDG_CACHE_HOME=/home/jenkins")
+
+  // Activate python environment
+  exec(". /usr/lib/ckan/env/bin/activate")
+
+  // Install dev-requirements
+  exec("sudo /usr/lib/ckan/env/bin/pip install -f requirements -r dev-requirements.txt")
+
+  // Show installed packages
+  exec("sudo /usr/lib/ckan/env/bin/pip freeze")
+
+  // Register plugin searchindexhook
+  exec("sudo python setup.py develop -f requirements")
+
+  // Fix workspace permissions for jenkins
+  exec("sudo chown -R jenkins $projectDir")
+
+  // Execute lint
+  exec("/usr/lib/ckan/env/bin/pylint --rcfile=pylint.cfg ckanext/govdatade --msg-template='{path}:{line}: [{msg_id}({symbol}), {obj}] {msg}' > pylint.log || exit 0")
+}
+
+task replaceExternalDevDependencies (dependsOn:["downloadAndInstallBaseRequirements"]) << {
+  exec("sed -i 's/.*git.*egg=ckanext-harvest/ckanext-harvest==0.2/' dev-requirements.txt")
+}
+
+task test (dependsOn:["replaceExternalDevDependencies"]) << {
+  // Set pip cache directory
+  exec("export XDG_CACHE_HOME=/home/jenkins")
+
+  // Activate python environment
+  exec(". /usr/lib/ckan/env/bin/activate")
+
+  // Install dev-requirements
+  exec("sudo /usr/lib/ckan/env/bin/pip install -f requirements -r dev-requirements.txt")
+
+  // Show installed packages
+  exec("sudo /usr/lib/ckan/env/bin/pip freeze")
+
+  // Register plugin searchindexhook
+  exec("sudo python setup.py develop -f requirements")
+
+  // Fix workspace permissions for jenkins
+  exec("sudo chown -R jenkins $projectDir")
+
+  // Execute tests
+  def testsExitCode = exec("/usr/lib/ckan/env/bin/nosetests --with-pylons=$projectDir/ci-config.ini --nologcapture --with-coverage --cover-package=ckanext.govdatade --cover-inclusive --cover-erase --with-xunit --xunit-file=testResults.xml --cover-xml --cover-xml-file=coverage.xml --cover-tests ckanext/govdatade/tests/*.py ckanext/govdatade/tests/validators/*.py")
+  if(testsExitCode > 0) {
+    throw new GradleException('Tests failed!')
+  }
+}
+
+task writeVersion (dependsOn:["test", "lint"]) << {
+  // Replace current version in setup.py
+  String content = file("$projectDir/setup.py").getText()
+  content=content.replaceAll("VERSION = '(.*?)'","VERSION = '$version'")
+  file("$projectDir/setup.py").setText(content)
+}
+
+task buildWheel (dependsOn:["writeVersion"]) << {
+  // Set pip cache directory
+  exec("export XDG_CACHE_HOME=/home/jenkins")
+
+  // Activate python environment
+  exec(". /usr/lib/ckan/env/bin/activate")
+
+  // Build wheel package
+  def buildExitCode = exec("python setup.py bdist_wheel")
+  if(buildExitCode > 0) {
+    throw new GradleException('Building wheel package failed!')
+  }
+}
+
+task packageDEB (dependsOn:["buildWheel"]) << {
+  ant.taskdef( name:'deb',
+               classname:'org.vafer.jdeb.ant.DebAntTask',
+               classpath: configurations.debAntTask.asPath)
+
+  // Copy control config
+  ant.copy(todir: "$buildDir/deb/control") {
+    fileset(dir: "$projectDir/deb/control")
+    filterset(begintoken:"[[", endtoken:"]]") {
+      filter(token:"version", value:"$version")
+      filter(token:"description", value:"CKAN extension for GovData: govdatade")
+      filter(token:"name", value:"ckanext-govdatade")
+    }
+    filterset() {
+      filter(token:"VERSION", value:"$version")
+    }
+  }
+
+  // Create the deb package
+  ant.deb(destfile:"$buildDir/ckanext-govdatade-${version}.deb", control: "$buildDir/deb/control") {
+    data(src: "$projectDir", type:"directory") {
+      include( name: 'requirements.txt' )
+      mapper( type: "perm",
+              prefix: "/usr/lib/ckanext-govdatade",
+              user: 'root',
+              group: 'root',
+              filemode: '644',
+              dirmode : '755'
+              )
+    }
+    data(src: "$projectDir/dist", type:"directory") {
+      mapper( type: "perm",
+              prefix: "/usr/lib/ckanext-govdatade/requirements",
+              user: 'root',
+              group: 'root',
+              filemode: '644',
+              dirmode : '755'
+              )
+    }
+    data(src: "$projectDir/requirements", type:"directory") {
+      mapper( type: "perm",
+              prefix: "/usr/lib/ckanext-govdatade/requirements",
+              user: 'root',
+              group: 'root',
+              filemode: '644',
+              dirmode : '755'
+              )
+    }
+    data(src: "$projectDir/deb/cronjobs", type:"directory") {
+      mapper( type: "perm",
+              prefix: "/usr/lib/ckanext-govdatade/cronjobs",
+              user: 'ckan',
+              group: 'root',
+              filemode: '744',
+              dirmode : '755'
+              )
+    }
+    data(src: "$projectDir/src/deb/supervised/ckan-harvesting-consumer.conf", type:"file") {
+      mapper( type: "perm",
+              prefix: "/etc/supervisor/conf.d",
+              user: 'root',
+              group: 'root',
+              filemode: '600'
+              )
+    }
+  }
+}
+
+def exec(String cmd) {
+  println "# will execute : '${cmd}'"
+  def process = ["sh", "-c", "${cmd}"].execute()
+  process.inputStream.eachLine {println "# " + it}
+  process.waitFor()
+  println "# result: " + process.exitValue()
+  return process.exitValue()
+}

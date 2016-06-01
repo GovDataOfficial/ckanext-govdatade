@@ -1,188 +1,333 @@
+'''
+Module for checking link availability of CKAN resources.
+'''
 from datetime import datetime
 
-import redis
-import requests
 import socket
 import logging
-import urllib2
+import ast
+import redis
+import requests
 
-log = logging.getLogger(__name__)
 
-def logme(logText):      
-        f = open('/opt/linkChecker.log','a')
-        f.write(logText + '\n')
-        f.close
+class LinkChecker(object):
 
-class LinkChecker:
+    '''
+    Class providing the actual link check logic.
+    '''
 
-    HEADERS = {'User-Agent': 'curl/7.29.0'}
-    TIMEOUT = 30.0
+    HEADERS = {'User-Agent': 'govdata-linkchecker'}
+    TIMEOUT = 15.0
+    SCHEMA_RECORD_KEY = 'urls'
 
-    def __init__(self, db='production'):
-        redis_db_dict = {'production': 0, 'test': 1}
-        database = redis_db_dict[db]
-        self.redis_client = redis.StrictRedis(host='localhost',
-                                              port=6379,
-                                              db=database)
+    def __init__(self, config):
+
+        self.logger = logging.getLogger(
+            'ckanext.govdatade.commands.linkchecker'
+        )
+
+        self.redis_client = redis.StrictRedis(
+            host=config.get('ckanext.govdata.validators.redis.host'),
+            port=int(config.get('ckanext.govdata.validators.redis.port')),
+            db=int(config.get('ckanext.govdata.validators.redis.database'))
+        )
+
+        timeout_config_string = config.get('ckanext.govdata.validators.linkchecker.timeout')
+        if timeout_config_string is not None:
+            try:
+                timeout_config = int(timeout_config_string)
+                self.TIMEOUT = timeout_config
+                self.logger.debug('Using timeout (s): %s', self.TIMEOUT)
+            except ValueError:
+                self.logger.debug('Timeout in configuration is not an integer: %s', timeout_config_string)
+                self.logger.debug('Using default timeout (s): %s', self.TIMEOUT)
 
     def process_record(self, dataset):
+        '''
+        Checking a single datasets URLs for availability
+        '''
         dataset_id = dataset['id']
-	#logme("DATASET_ID: " + dataset_id)
+        self.logger.debug('Data set id: %s', dataset_id)
         delete = False
-        
         portal = None
+        active_urls = []
+
         if 'extras' in dataset and \
            'metadata_original_portal' in dataset['extras']:
             portal = dataset['extras']['metadata_original_portal']
+
         for resource in dataset['resources']:
-	    #logme("RESOURCE_URL: " + resource['url'])
+            self.logger.debug('Resource URL: %s', resource['url'])
             url = resource['url']
-            url = url.replace('sequenz=tabelleErgebnis','sequenz=tabellen')
-            url = url.replace('sequenz=tabelleDownload','sequenz=tabellen')
-	    #logme("URL :" + url)
+            active_urls.append(url)
             try:
                 code = self.validate(url)
-		#logme("CODE: " + str(code))
+                self.logger.debug('HTTP status code for %s: %s', url, code)
                 if self.is_available(code):
                     self.record_success(dataset_id, url)
                 else:
-                    delete = delete or self.record_failure(dataset, url,
-                                                           code, portal)
+                    delete = delete or self.record_failure(
+                        dataset, url,
+                        code, portal
+                    )
             except requests.exceptions.Timeout:
-                delete = delete or self.record_failure(dataset, url,
-                                                       'Timeout', portal)
+                delete = delete or self.record_failure(
+                    dataset, url,
+                    'Timeout', portal
+                )
             except requests.exceptions.TooManyRedirects:
-                delete = delete or self.record_failure(dataset, url,
-                                                       'Redirect Loop', portal)
-            except requests.exceptions.RequestException as e:
-                if e is None:
-                    delete = delete or self.record_failure(dataset, url,
-                                                           'Unknown', portal)
+                delete = delete or self.record_failure(
+                    dataset, url,
+                    'Redirect Loop', portal
+                )
+            except requests.exceptions.SSLError:
+                delete = delete or self.record_failure(
+                    dataset, url,
+                    'SSL Error', portal
+                )
+            except requests.exceptions.RequestException as request_error:
+                if request_error is None:
+                    delete = delete or self.record_failure(
+                        dataset, url,
+                        'Unknown Request Error', portal
+                    )
                 else:
-                    delete = delete or self.record_failure(dataset, url, str(e), portal)
+                    delete = delete or self.record_failure(
+                        dataset, url,
+                        str(request_error), portal
+                    )
             except socket.timeout:
-                delete = delete or self.record_failure(dataset, url,
-                                                       'Timeout', portal)
+                delete = delete or self.record_failure(
+                    dataset, url,
+                    'Timeout', portal
+                )
+            except ValueError as value_error:
+                self.logger.debug('Value error: %s', value_error)
+                self.record_success(dataset_id, url)
+            except Exception as exception:
+                self.logger.debug('Unknown Error: %s', exception)
+                #In case of an unknown exception, change nothing
+                delete = delete or self.record_failure(
+                    dataset, url,
+                    'Unknown Error', portal
+                )
+        # Delete no more existent urls in dataset
+        self.delete_deprecated_urls(dataset_id, active_urls)
         return delete
 
     def check_dataset(self, dataset):
-        results = []
+        '''
+        Checks the URLs (resources) of a given dataset
+        '''
+        datasets = []
         for resource in dataset['resources']:
-	    #logme("check_dataset: RESOURCE: " + resource['url'])
-            #fca results.append(self.validate(resource['url']))
-	    url = resource['url']
-            url = url.replace('sequenz=tabelleErgebnis','sequenz=tabellen')
-            url = url.replace('sequenz=tabelleDownload','sequenz=tabellen')
-            results.append(self.validate(url))
-	    #logme("check_dataset: RESOURCE: " + resource['url'])
-	    #logme("check_dataset: RESULTS: " + results) 
-        return results
+            url = resource['url']
+            datasets.append(self.validate(url))
+        return datasets
 
     def validate(self, url):
-	#logme(url)
-	# do not check datasets from saxony until fix
-	if "statistik.sachsen" in url:
-	    return 200
-	elif "www.bundesjustizamt.de" in url:
-	    headers = { 'User-Agent' : 'Mozilla/5.0' }
-	    req = urllib2.Request(url, None, headers)
-	    try:
-		respo = urllib2.urlopen(req)
-		#logme("HTTP-CODE: " + str(respo.code))
-		return respo.code
-	    except urllib2.URLError, e:
-		#logme("HTTP-CODE(e): " + str(e.code))
-		return e.code
-	else:
-            response = requests.head(url, allow_redirects=True,timeout=self.TIMEOUT)
-            if self.is_available(response.status_code):
-                return response.status_code
-	        #logme("validate_if: RESPONSE.status: " + response.status_code)
-            else:
-                response = requests.get(url, allow_redirects=True,timeout=self.TIMEOUT)
-                #logme("validate_else: RESPONSE.status: " + str(response.status_code))
-                return response.status_code
+        '''
+        Validates a given URL by making a request against it
+        and returning it's HTTP status code.
+        '''
+        self.logger.debug('URL: %s', url)
 
-    def is_available(self, response_code):
+        response = requests.head(
+            url,
+            allow_redirects=True,
+            timeout=self.TIMEOUT,
+            headers=self.HEADERS,
+            verify=False
+        )
+
+        if self.has_redirection_to_404_page(response):
+            self.logger.debug(
+                'Redirect ends in HTTP status code %s', str(requests.codes.not_found)
+            )
+            return requests.codes.not_found
+        # if method HEAD is not allowed try again with http method GET
+        elif self.is_method_not_allowed(response.status_code):
+            response = requests.get(
+                url,
+                allow_redirects=True,
+                timeout=self.TIMEOUT,
+                headers=self.HEADERS,
+                verify=False
+            )
+
+        self.logger.debug(
+            'HTTP status code: %s', str(response.status_code)
+        )
+        return response.status_code
+
+    @classmethod
+    def has_redirection_to_404_page(cls, response):
+        '''
+        Utility method for determining if there's a redirection
+        to a 404 page in the response.
+        '''
+        if len(response.history) > 0:
+            for redirect_response in response.history:
+                if 'location' in redirect_response.headers:
+                    if '404' in redirect_response.headers['location']:
+                        return True
+
+        return False
+
+    @classmethod
+    def is_method_not_allowed(cls, status_code):
+        '''
+        Utility method for determining if the http method HEAD is not allowed by the server.
+        Some server returns the http status 405 "method not allowed" (correct answer), but
+        some server answer with the status code 400 "bad request".
+        '''
+        return (status_code == requests.codes.method_not_allowed) \
+            | (status_code == requests.codes.bad_request)
+
+    @classmethod
+    def is_available(cls, response_code):
+        '''
+        Utility method for determining the availability from
+        a HTTP status code
+        '''
         return response_code >= 200 and response_code < 300
 
     def record_failure(self, dataset, url, status, portal,
                        date=datetime.now().date()):
-	#logme("record_failure: URL: " + url)
+        '''
+        Adds a non available URL to the Redis dataset
+        '''
         dataset_id = dataset['id']
-	#logme("record_failure: DATASET_ID: " + dataset_id)
         dataset_name = dataset['name']
-        delete = False
-        log.debug(self.redis_client.get(dataset_id))
+        dataset_maintainer_email = dataset['maintainer_email'] if 'maintainer_email' in dataset else ''
+        dataset_maintainer = dataset['maintainer'] if 'maintainer' in dataset else ''
+        self.logger.debug(self.redis_client.get(dataset_id))
         record = unicode(self.redis_client.get(dataset_id))
-        try:     
-           record = eval(record)
-        except:
-               print "Record_error: ", record    
-        initial_url_record = {'status':  status,
-                              'date':    date.strftime("%Y-%m-%d"),
-                              'strikes': 1}
+        record = self.evaluate_record(record)
+
+        initial_url_record = {
+            'status': status,
+            'date': date.strftime("%Y-%m-%d"),
+            'strikes': 1
+        }
 
         if record is not None:
             record['name'] = dataset_name
+            record['maintainer'] = dataset_maintainer
+            record['maintainer_email'] = dataset_maintainer_email
             record['metadata_original_portal'] = portal
             self.redis_client.set(dataset_id, record)
 
         # Record is not known yet
         if record is None:
-            record = {'id': dataset_id, 'name': dataset_name, 'urls': {}}
-            record['urls'][url] = initial_url_record
+            record = {
+                'id': dataset_id,
+                'name': dataset_name,
+                'maintainer': dataset_maintainer,
+                'maintainer_email': dataset_maintainer_email,
+                self.SCHEMA_RECORD_KEY: {}
+            }
+
+            record[self.SCHEMA_RECORD_KEY][url] = initial_url_record
             record['metadata_original_portal'] = portal
             self.redis_client.set(dataset_id, record)
 
+        # Record is known, but only with schema errors
+        elif self.SCHEMA_RECORD_KEY not in record:
+            record[self.SCHEMA_RECORD_KEY] = {}
+            record[self.SCHEMA_RECORD_KEY][url] = initial_url_record
+            self.redis_client.set(dataset_id, record)
         # Record is known, but not that particular URL (Resource)
-        elif url not in record['urls']:
-            record['urls'][url] = initial_url_record
+        elif url not in record[self.SCHEMA_RECORD_KEY]:
+            record[self.SCHEMA_RECORD_KEY][url] = initial_url_record
             self.redis_client.set(dataset_id, record)
 
         # Record and URL are known, increment Strike counter if 1+ day(s) have
         # passed since the last check
         else:
-            url_entry = record['urls'][url]
+            url_entry = record[self.SCHEMA_RECORD_KEY][url]
             last_updated = datetime.strptime(url_entry['date'], "%Y-%m-%d")
-            last_updated = last_updated.date()
 
-            if last_updated < date:
-                url_entry['strikes'] += 1
-                url_entry['date'] = date.strftime("%Y-%m-%d")
-                self.redis_client.set(dataset_id, record)
+            try:
+                last_updated = datetime.combine(
+                    last_updated.date(), datetime.min.time())
 
-        delete = record['urls'][url]['strikes'] >= 100
+                if last_updated < date:
+                    url_entry['status'] = status
+                    url_entry['strikes'] += 1
+                    url_entry['date'] = date.strftime("%Y-%m-%d")
+                    self.redis_client.set(dataset_id, record)
+            except TypeError:
+
+                last_updated = last_updated.date()
+
+                if last_updated < date:
+                    url_entry['status'] = status
+                    url_entry['strikes'] += 1
+                    url_entry['date'] = date.strftime("%Y-%m-%d")
+                    self.redis_client.set(dataset_id, record)
+
+        delete = record[self.SCHEMA_RECORD_KEY][url]['strikes'] >= 100
 
         return delete
 
     def record_success(self, dataset_id, url):
+        '''
+        Deletes or adds URL's from Redis dataset records
+        '''
         record = self.redis_client.get(dataset_id)
+
         if record is not None:
-            try:
-               record = eval(unicode(record))
-            except:
-               print "ConnError"
-            _type= type(record) is dict
-            # Remove URL entry due to working URL
-            if record.get('urls'):
-               record['urls'].pop(url, None)
-            # Remove record entry altogether if there are no failures
-            # anymore
-            if not record.get('urls'):
-                self.redis_client.delete(dataset_id)
-            else:
+            record = self.evaluate_record(record)
+
+            # Remove URL entry due to a valid URL
+            if record.get(self.SCHEMA_RECORD_KEY):
+                record[self.SCHEMA_RECORD_KEY].pop(url, None)
+                self.redis_client.set(dataset_id, record)
+
+    def delete_deprecated_urls(self, dataset_id, active_urls):
+        '''
+        Deletes deprecated URL's from Redis dataset record
+        '''
+        record = self.redis_client.get(dataset_id)
+
+        if record is not None:
+            record = self.evaluate_record(record)
+
+            if self.SCHEMA_RECORD_KEY in record:
+                deprecated_urls = []
+                for candidate in record[self.SCHEMA_RECORD_KEY]:
+                    if candidate not in active_urls:
+                        deprecated_urls.append(candidate)
+
+                # Remove deprecated URL entries
+                for to_remove in deprecated_urls:
+                    self.logger.debug(
+                        'Delete deprecated url %s in dataset %s', to_remove, dataset_id)
+                    record[self.SCHEMA_RECORD_KEY].pop(to_remove, None)
+
                 self.redis_client.set(dataset_id, record)
 
     def get_records(self):
-        result = []
+        '''
+        Returns the dataset records from Redis
+        '''
+        records = []
         for dataset_id in self.redis_client.keys('*'):
-            #print "DS_id: ",dataset_id
-	    if dataset_id == 'general':
+            if dataset_id == 'general' or dataset_id.startswith('harvest_object_id', 0):
                 continue
-	    try:
-                result.append(eval(self.redis_client.get(dataset_id)))
-	    except:
-		print "DS_error: ", dataset_id
+            try:
+                records.append(
+                    ast.literal_eval(self.redis_client.get(dataset_id))
+                )
+            except ValueError:
+                self.logger.error('Data set error: %s', dataset_id)
 
-        return result
+        return records
+
+    def evaluate_record(self, record):
+        try:
+            record = ast.literal_eval(unicode(record))
+        except ValueError:
+            self.logger.error('Redis dataset record evaluation error: %s', record)
+        return record

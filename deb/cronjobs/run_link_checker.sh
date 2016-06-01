@@ -1,0 +1,16 @@
+#!/bin/bash
+
+export http_proxy="{{ http_proxy }}"
+export https_proxy="{{ http_proxy }}"
+export no_proxy="{{ no_proxy }}"
+
+ip=$(echo $IP_MASTER | tr -d '\r')
+/sbin/ip -o -4 addr list eth0 | awk '{print $4}' | cut -d/ -f1 | grep "$ip"
+
+if [ $? -eq 0 ]; then
+  logger "Start GovData linkchecker"
+  /usr/lib/ckan/env/bin/paster --plugin=ckanext-govdatade linkchecker --config=/etc/ckan/default/production.ini
+  logger "Finished GovData linkchecker"
+else
+  logger "Host isn't master host"
+fi

@@ -1,50 +1,66 @@
-from jsonschema.validators import Draft3Validator
-
-import json
-import urllib2
+import ast
+import logging
 import redis
 
+from jsonschema.validators import Draft3Validator
+from jsonschema import FormatChecker
 
-class SchemaChecker:
 
-    SCHEMA_URL = 'https://raw.github.com/fraunhoferfokus/ogd-metadata/master/OGPD_JSON_Schema.json'  # NOQA
+class SchemaChecker(object):
+    '''
+    Class providing the actual schema validation logic.
+    '''
 
-    def __init__(self, db='production'):
-        redis_db_dict = {'production': 0, 'test': 1}
-        database = redis_db_dict[db]
-        self.schema = json.loads(urllib2.urlopen(self.SCHEMA_URL).read())
-        self.redis_client = redis.StrictRedis(host='localhost',
-                                              port=6379,
-                                              db=database)
+    SCHEMA_RECORD_KEY = 'schema'
+
+    def __init__(self, config, schema=None):
+        self.schema = schema
+
+        self.redis_client = redis.StrictRedis(
+            host=config.get('ckanext.govdata.validators.redis.host'),
+            port=int(config.get('ckanext.govdata.validators.redis.port')),
+            db=int(config.get('ckanext.govdata.validators.redis.database'))
+        )
+        self.logger = logging.getLogger(
+            'ckanext.govdatade.commands.schemachecker'
+        )
 
     def process_record(self, dataset):
+        '''
+        Validates a given dataset
+        '''
         dataset_id = dataset['id']
+        dataset_name = dataset['name']
+        dataset_maintainer = dataset['maintainer'] if 'maintainer' in dataset else ''
+        portal = dataset['extras'].get('metadata_original_portal', 'null').lower()
         record = self.redis_client.get(dataset_id)
 
-	try:
-	   record = eval(record)
-	   print "RECORD_ID_____: ", record['id']
-	except:
-	   print "EVAL_ERROR"
-
-        portal = dataset['extras'].get('metadata_original_portal', 'null')
+        if record is not None:
+            try:
+                record = ast.literal_eval(record)
+                record['name'] = dataset_name
+                record['maintainer'] = dataset_maintainer
+                record['metadata_original_portal'] = portal
+                self.logger.debug('Record id: %s', record['id'])
+            except ValueError:
+                self.logger.error(
+                    'Redis dataset record evaluation error: %s',
+                    record
+                )
 
         if record is None:
-            record = {'id': dataset_id, 'metadata_original_portal': portal}
-#fca	    print "if RECORD is NONE_________: ", record
-            record['schema'] = []
+            record = {
+                'id': dataset_id,
+                'name': dataset_name,
+                'maintainer': dataset_maintainer,
+                'metadata_original_portal': portal}
+            record[self.SCHEMA_RECORD_KEY] = []
 
         broken_rules = []
 
-#fca     else:
-#	    try:                  
-#               record = eval(record)
-#            except:
-#               print "SECONDE_EVAL_ERROR_____: ", record
-
-        errors = Draft3Validator(self.schema).iter_errors(dataset)
-        if not Draft3Validator(self.schema,).is_valid(dataset):
-            errors = Draft3Validator(self.schema).iter_errors(dataset)
+        format_checker = FormatChecker(('date-time',))
+        if not Draft3Validator(self.schema, format_checker=format_checker).is_valid(dataset):
+            errors = Draft3Validator(self.schema, format_checker=format_checker).iter_errors(dataset)
 
             for error in errors:
                 path = [e for e in error.path if isinstance(e, basestring)]
@@ -54,31 +70,36 @@ class SchemaChecker:
                 broken_rules.append(field_path_message)
 
         dataset_groups = dataset['groups']
-        
-        if (len(dataset_groups) >= 4):
-            path = "groups"
-            field_path_message = [path, "WARNING: too many groups set"]
+
+        if len(dataset_groups) >= 4:
+            path = 'groups'
+            field_path_message = [path, 'WARNING: too many groups set']
             broken_rules.append(field_path_message)
 
-	print "BROKEN_RULES_____: ", broken_rules
+        self.logger.debug('Broken rules id: %s', broken_rules)
 
-	try:
-           record['schema'] = broken_rules
-	except:
-	   print "SCHEMA_BROKEN_RULES_ERROR_____"
+        try:
+            record[self.SCHEMA_RECORD_KEY] = broken_rules
+        except:
+            self.logger.error('Schema broken rules error')
 
         self.redis_client.set(dataset_id, record)
 
         return not broken_rules
 
     def get_records(self):
-        result = []
+        '''
+        Returns the dataset records from Redis
+        '''
+        records = []
         for dataset_id in self.redis_client.keys('*'):
             if dataset_id == 'general':
                 continue
-	    try:
-               result.append(eval(self.redis_client.get(dataset_id)))
-	    except:
-	       print "DS_errer_schema: ", dataset_id
+            try:
+                records.append(
+                    ast.literal_eval(self.redis_client.get(dataset_id))
+                )
+            except ValueError:
+                self.logger.error('Data set error: %s', dataset_id)
 
-        return result
+        return records

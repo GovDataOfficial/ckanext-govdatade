@@ -1,0 +1,3 @@
+include README.md
+recursive-include ckanext/govdatade/report_assets *
+recursive-include ckanext/govdatade/mail_assets *

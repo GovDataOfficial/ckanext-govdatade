@@ -1,4 +1,4 @@
-syntax: glob 
+syntax: glob
 *.pyc
 *.egg-info
 *.swp
@@ -9,3 +9,7 @@ dist
 pip-log.txt
 output/validation.html
 *.log
+/requirements
+/.project
+/.pydevproject
+/.settings

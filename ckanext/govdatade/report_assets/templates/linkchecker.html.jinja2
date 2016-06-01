@@ -1,0 +1,88 @@
+{% extends "layout.html.jinja2" %}
+{% block body %}
+  <h1>Verweispr&uuml;fer</h1>
+  <div class="row">
+    <div class="col-md-12">
+      <h2>&Uuml;bersicht</h2>
+      <p>Folgend die &Uuml;bersicht der Datenbereitsteller die betroffenen sind von toten Links in einzelnen Metadatens&auml;tzen.</p>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col-md-12">
+      <input class="search" placeholder="Filtern" />
+      <table class="overview table table-striped table-bordered has-sum">
+        <thead>
+          <tr>
+            <th>Datenbereitsteller <button class="sort" data-sort="datasource" data-insensitive="true">sortieren</button></th>
+            <th>Anzahl <button class="sort" data-sort="brokenrecords" data-insensitive="true">sortieren</button></th>
+          </tr>
+        </thead>
+        <tbody class="list">
+          {% for portal, broken_records in portals|dictsort(false, 'value')|reverse %}
+            <tr>
+              <td>
+                <div class="row">
+                  <div class="col-md-9 datasource">{{ portal }}</div>
+                  <div class="col-md-3">
+                    <div class="bar" style="width:{{ broken_records / portals.values()|sum * 20}}em"></div>
+                  </div>
+                </div>
+              </td>
+              <td class="brokenrecords">
+                {{ broken_records }}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col-md-12">
+      <h2>Analyse</h2>
+        <p>&Uuml;bersicht der einzelnen Datens&auml;tze die pro Metadatensatz betroffen sind.</p>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col-md-12">
+      <ul class="nav nav-pills">
+        {% for portal, records in entries.iteritems() %}
+          <li class="{{ "active" if loop.index == 1 }}"><a href="#{{ amend_portal(portal) }}" data-toggle="tab">{{ portal }}</a></li>
+        {% endfor %}
+      </ul>
+      <div class="tab-content">
+        {% for portal, records in entries.iteritems() %}
+          <div id="{{ amend_portal(portal) }}" class="tab-pane {{ "active" if loop.index == 1 }}">
+            <input class="search" placeholder="Filtern" />
+            <table class="analysis table table-bordered">
+              <thead>
+                <tr>
+                  <th>ID <button class="sort" data-sort="id" data-insensitive="true">sortieren</button></th>
+                  <th>Name <button class="sort" data-sort="name" data-insensitive="true">sortieren</button></th>
+                  <th>Kontaktperson <button class="sort" data-sort="contact" data-insensitive="true">sortieren</button></th>
+                  <th>URL <button class="sort" data-sort="url" data-insensitive="true">sortieren</button></th>
+                  <th>Fehler <button class="sort" data-sort="error" data-insensitive="true">sortieren</button></th>
+                  <th>Tage nicht erreichbar <button class="sort" data-sort="daysdead" data-insensitive="true">sortieren</button></th>
+                </tr>
+              </thead>
+              <tbody class="list">
+                {% for record in records %}
+                  {% for url, analysis in record['urls'].iteritems() %}
+                    <tr>
+                      <td><a href="{{ ckan_api_url }}/rest/dataset/{{ record['id'] }}" class="id" target="_blank">{{ record['id'] }}</a></td>
+                      <td class="name">{{ record['name'] }}</td>
+                      <td class="contact">{{ record['maintainer'] }}</td>
+                      <td><a href="{{ url }}" class="url" target="_blank">{{ url }}</a></td>
+                      <td class="error">{{ analysis['status'] }}</td>
+                      <td class="daysdead">{{ analysis['strikes'] }} {% if analysis['strikes'] >= 3 %}<span class="deleted"><a data-toggle="tooltip" title="Metadatensatz wurde deaktiviert">X</a></span>{% endif %}</td>
+                    </tr>
+                  {% endfor %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+{% endblock %}

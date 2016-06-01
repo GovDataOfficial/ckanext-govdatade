@@ -1,37 +1,52 @@
 # ckanext-govdatade
 
-[![Build Status](https://travis-ci.org/fraunhoferfokus/ckanext-govdatade.png?branch=master)](https://travis-ci.org/fraunhoferfokus/ckanext-govdatade)
-
-GovData.de specific CKAN extension
+GovData.de specific CKAN extension for importing data from several remote sources.
 
 ### Dependencies
 
-The GovData.de harvester relies on a group import feature, which is currently not implemented in the `ckanext-harvest`. Therefore a [fork][fork] with a feature branch is used as the dependency instead.
+The GovData.de harvester is based on the CKAN extension [ckanext-harvest](https://github.com/ckan/ckanext-harvest).
 
 ## Getting Started
 
 If you are using Python virtual environment (virtualenv), activate it.
 
-```bash
-$ pip install -e git+git://github.com/fraunhoferfokus/ckanext-govdatade.git#egg=ckanext-govdatade
-$ cd /path/to/virtualenv/src/ckanext-govdatade
-$ pip install -r requirements.txt
-$ python setup.py develop
+Install a specific version of the CKAN extension ckanext-harvest. It is tested that ckanext-govdatade is working well with the branch release-v2.0 of ckanext-harvest.
 
-$ cd /path/to/virtualenv/src/ckanext-harvester
-$ pip install -r pip-requirements.txt
+```bash
+$ cd /path/to/virtualenv
+$ /path/to/virtualenv/bin/pip install -e git+git://github.com/GovDataOfficial/ckanext-govdatade.git#egg=ckanext-govdatade
+$ cd src/ckanext-govdatade
+$ /path/to/virtualenv/bin/pip install -r base-requirements.txt -f requirements
 $ python setup.py develop
 ```
 
 Add the following plugins to your CKAN configuration file:
 
 ```ini
-ckan.plugins = stats harvest ckan_harvester bayern_harvester bremen_harvester hamburg_harvester rlp_harvester berlin_harvester moers_harvester rostock_harvester govapps_harvester datahub_harvester
+ckan.plugins = stats harvest ckan_harvester hamburg_harvester rlp_harvester berlin_harvester datahub_harvester rostock_harvester opennrw_harvester bremen_harvester gdi_harvester genesis_destatis_harvester destatis_harvester regionalstatistik_harvester sachsen_harvester bmbf_harvester bfj_harvester
 ```
 
-Please make sure, that the CKAN process will have access to the logfile specified in `/path/to/virtualenv/src/ckanext-govdata/ckanext/govdatade/harvesters/config.ini`. After restarting CKAN the plugins should be ready to use.
+Init the harvest tables in the database
 
-[fork]: https://github.com/fraunhoferfokus/ckanext-harvest
+```bash
+$ path/to/virtualenv/bin/paster --plugin=ckanext-harvest harvester initdb --config=mysite.ini
+```
+
+Create the harvest user
+
+- create ckan harvest user
+
+    sudo -u ckan /path/to/virtualenv/bin/paster --plugin=ckan user add harvest password=harvest email=harvest@example.com --config=/etc/ckan/default/production.ini
+  
+- give sysadmin privileges to ckan harvest user
+
+    sudo -u ckan /path/to/virtualenv/bin/paster --plugin=ckan sysadmin add harvest --config=/etc/ckan/default/production.ini
+
+## Creating ogd conform groups
+If you want to create the standard open data groups you can use the ckan command "groupadder" by following the instructions:
+
+    source /path/to/ckan/env/bin/activate
+    sudo -u ckan /path/to/ckan/env/bin/paster --plugin=ckanext-govdatade groupadder --config=/etc/ckan/default/production.ini
 
 ## Testing
 

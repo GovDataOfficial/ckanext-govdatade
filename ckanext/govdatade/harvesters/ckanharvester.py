@@ -1,103 +1,142 @@
 #!/usr/bin/python
 # -*- coding: utf8 -*-
-
-from ckanext.harvest.harvesters.ckanharvester import CKANHarvester
-from ckanext.harvest.model import HarvestObject
-from ckanext.govdatade.harvesters.translator import translate_groups
-from ckanext.govdatade.util import iterate_local_datasets
-from ckanext.govdatade.validators.link_checker import LinkChecker
-from ckanext.govdatade.config import CONFIG
-
-from ckan import model
-from ckan.logic import get_action
-from ckan.logic.schema import default_package_schema
-from ckan.model import Session
-
+'''
+Module for harvesting CKAN instances into GovData.
+'''
+import datetime
 import json
 import logging
 import urllib2
-import uuid
+import re
 import ckanapi
-import datetime
+
+from ckanext.harvest.harvesters.ckanharvester import CKANHarvester
+from ckanext.harvest.harvesters.ckanharvester import ContentFetchError
+from ckanext.harvest.interfaces import IHarvester
+from ckanext.govdatade.harvesters.translator import translate_groups
+from ckanext.govdatade.config import config
+from ckanext.govdatade.util import iterate_local_datasets
+from simplejson.scanner import JSONDecodeError
+
+from ckan import model
+from ckan.logic import get_action
+from ckan.logic.schema import default_create_package_schema
+from ckan.model import Session
+from ckan.plugins.core import implements
 
 log = logging.getLogger(__name__)
 
 
-def assert_author_fields(package_dict, author_alternative,
-                         author_email_alternative):
-    """Ensures that the author field is set."""
+def assert_author_fields(package_dict, author_alternative, author_email_alternative):
+    '''Assert author field presence.'''
 
-    if not 'author' in package_dict or not package_dict['author']:
+    if 'author' not in package_dict or not package_dict['author']:
         package_dict['author'] = author_alternative
 
-    if not 'author_email' in package_dict or not package_dict['author_email']:
+    if 'author_email' not in package_dict or not package_dict['author_email']:
         package_dict['author_email'] = author_email_alternative
 
     if not package_dict['author']:
-        raise ValueError('There is no author for package %s' % package_dict['id'])
-
-
-def resolve_json_incosistency(dataset):
-    return dataset
+        value_error = 'There is no author for package {id}'.format(
+            id=package_dict['id']
+        )
+        raise ValueError(value_error)
 
 
 class GroupCKANHarvester(CKANHarvester):
-    """
-    An extended CKAN harvester that also imports remote groups, for that api
-    version 1 is enforced
-    """
+
+    '''
+    An extended CKAN harvester that also imports remote groups,
+    for that api version 1 is enforced.
+    '''
 
     api_version = 1
-    """Enforce API version 1 for enabling group import"""
+    '''Enforce API version 1 for enabling group import'''
 
     def __init__(self):
-        schema_url = CONFIG.get('URLs', 'schema')
-        groups_url = CONFIG.get('URLs', 'groups')
+        schema_url = config.get('ckanext.govdata.urls.schema')
+        groups_url = config.get('ckanext.govdata.urls.groups')
+
+        if schema_url is None:
+            error_message = 'Missing configuration value for {config_key}'.format(
+                config_key='ckanext.govdata.urls.schema'
+            )
+            raise ValueError(error_message)
+        if groups_url is None:
+            error_message = 'Missing configuration value for {config_key}'.format(
+                config_key='ckanext.govdata.urls.groups'
+            )
+            raise ValueError(error_message)
+
         self.schema = json.loads(urllib2.urlopen(schema_url).read())
         self.govdata_groups = json.loads(urllib2.urlopen(groups_url).read())
-        self.link_checker = LinkChecker()
 
     def _set_config(self, config_str):
-        """Enforce API version 1 for enabling group import"""
+        '''Enforce API version 1 for enabling group import.'''
+
         if config_str:
             self.config = json.loads(config_str)
         else:
             self.config = {}
+
         self.api_version = 1
         self.config['api_version'] = 1
         self.config['force_all'] = True
         self.config['remote_groups'] = 'only_local'
         self.config['user'] = 'harvest'
-                    
-    def import_stage(self, harvest_object):
-        package_dict = json.loads(harvest_object.content)
-        
-        delete = self.link_checker.process_record(package_dict)
-        # deactivated until broken links are fixed
-        
-        if delete:
-            package_dict['state'] = 'deleted'
-        else:
-            if 'deprecated' not in package_dict['tags']:
-                package_dict['state'] = 'active'
-                
-        harvest_object.content = json.dumps(package_dict)
 
-        super(GroupCKANHarvester, self).import_stage(harvest_object)
+        config_settings_log_message = 'config_settings: {config_settings}'.format(
+            config_settings=json.dumps(self.config)
+        )
+
+        log.debug(config_settings_log_message)
+
+    @classmethod
+    def cleanse_tags(cls, tags):
+        '''Cleans a set of given tags.'''
+
+        log.debug(
+            'Cleansing tags: %s.',
+            json.dumps(tags)
+        )
+
+        if isinstance(tags, list):
+            cleansed_tags = []
+
+            for tag in tags:
+                cleansed_tags.append(cls.cleanse_special_characters(tag))
+
+            return cleansed_tags
+
+        return cls.cleanse_special_characters(tags)
+
+
+    @classmethod
+    def cleanse_special_characters(cls, tag):
+        '''Cleans a given tag of special characters.'''
+        tag = tag.lower().strip()
+        return re.sub(u'[^a-zA-ZÄÖÜäöü0-9 \-_\.]', '', tag).replace(' ', '-')
 
 
 class GovDataHarvester(GroupCKANHarvester):
-    """The base harvester for GovData.de perfoming remote synchonization."""
 
-    def build_context(self):
-        return {'model': model,
-                'session': Session,
-                'user': u'harvest',
-                'schema': default_package_schema(),
-                'validate': False,
-                'api_version': 1}
+    '''The base harvester for GovData.de performing remote synchronization.'''
 
-    def portal_relevant(self, portal):
+    implements(IHarvester)
+
+    @classmethod
+    def build_context(cls):
+        return {
+            'model': model,
+            'session': Session,
+            'user': u'harvest',
+            'schema': default_create_package_schema(),
+            'validate': False,
+            'api_version': 1
+        }
+
+    @classmethod
+    def portal_relevant(cls, portal):
         def condition_check(dataset):
             for extra in dataset['extras']:
                 if extra['key'] == 'metadata_original_portal':
@@ -110,14 +149,17 @@ class GovDataHarvester(GroupCKANHarvester):
         return condition_check
 
     def delete_deprecated_datasets(self, context, remote_dataset_names):
+        '''
+        Deletes deprecated datasets
+        '''
         package_update = get_action('package_update')
 
         local_datasets = iterate_local_datasets(context)
-        filtered = filter(self.portal_relevant(self.PORTAL), local_datasets)
+        filtered = filter(self.portal_relevant(self.portal), local_datasets)
         local_dataset_names = map(lambda dataset: dataset['name'], filtered)
 
         deprecated = set(local_dataset_names) - set(remote_dataset_names)
-        log.info('Found %s deprecated datasets.' % len(deprecated))
+        log.info('Found %s deprecated datasets.', len(deprecated))
 
         for local_dataset in filtered:
             if local_dataset['name'] in deprecated:
@@ -125,8 +167,12 @@ class GovDataHarvester(GroupCKANHarvester):
                 local_dataset['tags'].append({'name': 'deprecated'})
                 package_update(context, local_dataset)
 
-    def compare_metadata_modified(self, remote_md_modified, local_md_modified):
-        dt_format = "%Y-%m-%dT%H:%M:%S.%f"
+    @classmethod
+    def compare_metadata_modified(cls, remote_md_modified, local_md_modified):
+        '''
+        Compares the modified datetimes of the metadata
+        '''
+        dt_format = '%Y-%m-%dT%H:%M:%S.%f'
         remote_dt = datetime.datetime.strptime(remote_md_modified, dt_format)
         local_dt = datetime.datetime.strptime(local_md_modified, dt_format)
         if remote_dt < local_dt:
@@ -141,16 +187,20 @@ class GovDataHarvester(GroupCKANHarvester):
             return True
 
     def verify_transformer(self, remote_dataset):
-        """ Based on metadata_transformer, this method checks, if a dataset should be imported"""
-        registry = ckanapi.RemoteCKAN('http://localhost:80/ckan')
+        '''Based on metadata_transformer, this method checks, if a dataset should be imported.'''
+        registry = ckanapi.RemoteCKAN(
+            config.get('ckanext.govdata.harvester.ckan.api.base.url')
+        )
         remote_dataset = json.loads(remote_dataset)
         remote_dataset_extras = remote_dataset['extras']
         if 'metadata_original_id' in remote_dataset_extras:
             orig_id = remote_dataset_extras['metadata_original_id']
             try:
-                local_search_result = registry.action.package_search(q='metadata_original_id:"' + orig_id + '"')
+                local_search_result = registry.action.package_search(
+                    q='metadata_original_id:"' + orig_id + '"')
                 if local_search_result['count'] == 0:
-                    log.debug('Did not find this original id. Import accepted.')
+                    log.debug(
+                        'Did not find this original id. Import accepted.')
                     return True
                 if local_search_result['count'] == 1:
                     log.debug('Found duplicate entry')
@@ -163,73 +213,84 @@ class GovDataHarvester(GroupCKANHarvester):
                         for entry in local_dataset_extras:
                             if entry['key'] == 'metadata_transformer':
                                 value = entry['value']
-                                local_transformer = value.lstrip('"').rstrip('"')
+                                local_transformer = value.lstrip(
+                                    '"').rstrip('"')
                                 log.debug('Found local metadata transformer')
                             if entry['key'] == 'metadata_original_portal':
-                                            tmp_value = entry['value']
-                                            local_portal = tmp_value.lstrip('"').rstrip('"')
+                                tmp_value = entry['value']
+                                local_portal = tmp_value.lstrip(
+                                    '"').rstrip('"')
                         if 'metadata_transformer' in remote_dataset_extras:
-                            remote_transformer = remote_dataset_extras['metadata_transformer']
+                            remote_transformer = remote_dataset_extras[
+                                'metadata_transformer']
                             if remote_transformer == local_transformer or remote_transformer == 'harvester':
                                 # TODO this is temporary for gdi-de
                                 if local_portal == 'http://www.statistik.sachsen.de/':
                                     log.debug('Found sachsen, accept import.')
                                     return True
-                                log.debug('Remote metadata transformer equals local transformer -> check metadata_modified')
+                                log.debug(
+                                    'Remote metadata transformer equals local transformer -> check metadata_modified')
                                 # TODO check md_modified
                                 if 'metadata_modified' in remote_dataset:
-                                    return self.compare_metadata_modified(remote_dataset['metadata_modified'], local_dataset['metadata_modified'])
+                                    return self.compare_metadata_modified(remote_dataset['metadata_modified'],
+                                                                          local_dataset['metadata_modified'])
                                 else:
-                                    log.debug('Remote metadata transformer equals local transformer, but remote dataset does not contain metadata_modified -> skipping')
+                                    log.debug(
+                                        'Remote metadata transformer equals local transformer, but remote dataset does not contain metadata_modified -> skipping')
                                     return False
                             elif remote_transformer == 'author' and local_transformer == 'harvester':
                                 log.debug(
                                     'Remote metadata transformer equals author and local equals harvester -> importing.')
                                 return True
                             else:
-                                log.debug('unknown value for remote metadata_transformer -> skipping.')
+                                log.debug(
+                                    'unknown value for remote metadata_transformer -> skipping.')
                                 return False
                         else:
-                            log.debug('remote does not contain metadata_transformer, fallback on metadata_modified')
+                            log.debug(
+                                'remote does not contain metadata_transformer, fallback on metadata_modified')
                             if 'metadata_modified' in remote_dataset:
-                                return self.compare_metadata_modified(remote_dataset['metadata_modified'], local_dataset['metadata_modified'])
+                                return self.compare_metadata_modified(remote_dataset['metadata_modified'],
+                                                                      local_dataset['metadata_modified'])
                             else:
-                                log.debug('Remote metadata transformer equals local transformer, but remote dataset does not contain metadata_modified -> skipping')
+                                log.debug(
+                                    'Remote metadata transformer equals local transformer, but remote dataset does not contain metadata_modified -> skipping')
                                 return False
                     else:
                         if 'metadata_modified' in remote_dataset:
-                            return self.compare_metadata_modified(remote_dataset['metadata_modified'], local_dataset['metadata_modified'])
+                            return self.compare_metadata_modified(remote_dataset['metadata_modified'],
+                                                                  local_dataset['metadata_modified'])
                         else:
                             log.debug(
                                 'Found duplicate entry but remote dataset does not contain metadata_modified -> skipping.')
                             return False
-            except Exception as e:
-                log.error(e)
+            except Exception as exception:
+                log.error(exception)
         else:
             log.debug('no metadata_original_id. Importing accepted.')
             return True
 
     def gather_stage(self, harvest_job):
-        """Retrieve local datasets for synchronization."""
-
-        self._set_config(harvest_job.source.config)
-        content = self._get_content(harvest_job.source.url)
-
-        base_url = harvest_job.source.url.rstrip('/')
-        base_rest_url = base_url + self._get_rest_api_offset()
-        url = base_rest_url + '/package'
-
+        '''Retrieve local datasets for synchronization.'''
         try:
+            self._set_config(harvest_job.source.config)
+            content = self._get_content(harvest_job.source.url)
+
+            base_url = harvest_job.source.url.rstrip('/')
+            base_rest_url = base_url + self._get_rest_api_offset()
+            url = base_rest_url + '/package'
+
             content = self._get_content(url)
-        except Exception, e:
-            error = 'Unable to get content for URL: %s: %s' % (url, str(e))
+        except JSONDecodeError as err:
+            self._save_gather_error(err.message, harvest_job)
+            return None
+        except ContentFetchError as err:
+            self._save_gather_error(err.message, harvest_job)
+            return None
+        except Exception as err:
+            error = 'Unable to get content for URL: %s: %s' % (url, str(err))
             self._save_gather_error(error, harvest_job)
             return None
-
-        context = self.build_context()
-        remote_datasets = json.loads(content)
-        # remote_dataset_names = map(lambda d: d['name'], remote_datasets)
-        # self.delete_deprecated_datasets(context, remote_dataset_names)
 
         return super(GovDataHarvester, self).gather_stage(harvest_job)
 
@@ -240,44 +301,121 @@ class GovDataHarvester(GroupCKANHarvester):
 
 
 class RostockCKANHarvester(GovDataHarvester):
-    """A CKAN Harvester for Rostock solving data compatibility problems."""
 
-    PORTAL = 'http://www.opendata-hro.de'
+    '''A CKAN harvester for Rostock solving data compatibility problems.'''
+
+    implements(IHarvester)
+
+    def __init__(self, name='rostock_harvester'):
+        url_dict = config.get_harvester_urls(name)
+        log.debug('url_dict: %s', json.dumps(url_dict))
+        self.portal = url_dict['portal_url']
 
     def info(self):
-        return {'name': 'rostock',
-                'title': 'Rostock Harvester',
-                'description': 'A CKAN Harvester for Rostock solving data'
-                               'compatibility problems.'}
+        return {
+            'name': 'rostock',
+            'title': 'Datenportal Rostock',
+            'description': self.__doc__.split('\n')[0]
+        }
 
     def amend_package(self, package):
-        portal = 'http://www.opendata-hro.de'
-        package['extras']['metadata_original_portal'] = portal
+        '''
+        Amends the package data
+        '''
+        if 'tags' in package:
+            package['tags'] = self.cleanse_tags(package['tags'])
+            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+
+        package['extras']['metadata_original_portal'] = self.portal
         package['name'] = package['name'] + '-hro'
         for resource in package['resources']:
             resource['format'] = resource['format'].lower()
 
     def import_stage(self, harvest_object):
-        package_dict = json.loads(harvest_object.content)
+        package = json.loads(harvest_object.content)
         try:
-            self.amend_package(package_dict)
-        except ValueError, e:
-            self._save_object_error(str(e), harvest_object)
-            log.error('Rostock: ' + str(e))
+            self.amend_package(package)
+        except ValueError, error:
+            self._save_object_error(str(error), harvest_object)
+            log.error('Rostock: ' + str(error))
             return
-        harvest_object.content = json.dumps(package_dict)
+
+        harvest_object.content = json.dumps(package)
         super(RostockCKANHarvester, self).import_stage(harvest_object)
 
 
 class HamburgCKANHarvester(GroupCKANHarvester):
-    """A CKAN Harvester for Hamburg solving data compatibility problems."""
+
+    '''A CKAN harvester for Hamburg solving data compatibility problems.'''
+
+    implements(IHarvester)
+
+    def __init__(self, name='hamburg_harvester'):
+        url_dict = config.get_harvester_urls(name)
+        log.debug('url_dict: %s', json.dumps(url_dict))
+        self.portal = url_dict['portal_url']
 
     def info(self):
-        return {'name': 'hamburg',
-                'title': 'Hamburg Harvester',
-                'description': 'A CKAN Harvester for Hamburg solving data compatibility problems.'}
+        return {
+            'name': 'hamburg',
+            'title': 'Datenportal Hamburg',
+            'description': self.__doc__.split('\n')[0]
+        }
 
     def amend_package(self, package):
+        '''
+        Amends the package data
+        '''
+        if 'tags' in package:
+            package['tags'] = self.cleanse_tags(package['tags'])
+            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+
+        extras = package['extras']
+
+        is_latest_version = extras.get('latestVersion', None)
+
+        if is_latest_version == 'true':
+            log.debug(
+                'received latestVersion == true. Continue with this dataset')
+
+            remote_metadata_original_id = extras.get(
+                'metadata_original_id', None)
+            registry = ckanapi.RemoteCKAN(
+                config.get('ckanext.govdata.harvester.ckan.api.base.url')
+            )
+            local_search_result = registry.action.package_search(
+                q='metadata_original_id:"' + remote_metadata_original_id + '"'
+            )
+
+            if local_search_result['count'] == 0:
+                log.debug(
+                    'Did not find this metadata original id. Import accepted.')
+            elif local_search_result['count'] == 1:
+                log.debug(
+                    'Found local dataset for particular metadata_original_id')
+                local_dataset_from_action_api = local_search_result[
+                    'results'][0]
+
+                # copy name and id from local dataset to remote dataset
+                log.debug('Copy id and name to remote dataset')
+                log.debug(package['id'])
+                log.debug(package['name'])
+                package['id'] = local_dataset_from_action_api['id']
+                package['name'] = local_dataset_from_action_api['name']
+                log.debug(package['id'])
+                log.debug(package['name'])
+            else:
+
+                log_message = 'Found more than one local dataset for particular '
+                log_message = log_message + 'metadata_original_id. Offending '
+                log_message = log_message + 'metadata_original_id is:'
+                log.debug(log_message)
+                log.debug(remote_metadata_original_id)
+        elif is_latest_version == 'false':
+            # do not import or update this particular remote dataset
+            log.debug('received latestVersion == false. Skip this dataset')
+            return False
+
         # check if import is desired
         if package['type'] == 'document':
             # check if tag 'govdata' exists
@@ -294,51 +432,94 @@ class HamburgCKANHarvester(GroupCKANHarvester):
         elif package['type'] == 'dataset':
             package['type'] = 'datensatz'
 
-        extras = package['extras']
         # fix groups
-        log.debug("Before: ")
+        log.debug('Before: ')
         log.debug(package['groups'])
         package['groups'] = translate_groups(package['groups'], 'hamburg')
-        log.debug("After: ")
+        log.debug('After: ')
         log.debug(package['groups'])
-        # set original portal
-        default_portal = 'http://suche.transparenz.hamburg.de/'
-        if not extras.get('metadata_original_portal'):
-            extras['metadata_original_portal'] = default_portal
 
-        assert_author_fields(package, package['maintainer'],
-                             package['maintainer_email'])
+        if not extras.get('metadata_original_portal'):
+            extras['metadata_original_portal'] = self.portal
+
+        assert_author_fields(
+            package,
+            package.get('maintainer'),
+            package.get('maintainer_email')
+        )
 
         return True
 
-    def import_stage(self, harvest_object):
-        package_dict = json.loads(harvest_object.content)
+    def fetch_stage(self, harvest_object):
+        log.debug('In CKANHarvester fetch_stage')
+
+        self._set_config(harvest_object.job.source.config)
+
+        # Get source URL
+        url = harvest_object.source.url.rstrip('/')
+        url = url + self._get_rest_api_offset() + '/package/' + \
+            harvest_object.guid
+
+        # Get contents
         try:
-            valid = self.amend_package(package_dict)
+            content = self._get_content(url)
+        except Exception, error:
+            self._save_object_error('Unable to get content for package: %s: %r' %
+                                    (url, error), harvest_object)
+            import time
+            log.debug('Going to sleep for 45s')
+            time.sleep(45)
+            log.debug('Wake up from sleep')
+            return None
+
+        # Save the fetched contents in the harvest object
+        harvest_object.content = content
+        harvest_object.save()
+        return True
+
+    def import_stage(self, harvest_object):
+        package = json.loads(harvest_object.content)
+        try:
+            valid = self.amend_package(package)
             if not valid:
                 return  # drop package
-        except ValueError, e:
-            self._save_object_error(str(e), harvest_object)
-            log.error('Hamburg: ' + str(e))
+        except ValueError, error:
+            self._save_object_error(str(error), harvest_object)
+            log.error('Hamburg: ' + str(error))
             return
-        harvest_object.content = json.dumps(package_dict)
+        harvest_object.content = json.dumps(package)
         super(HamburgCKANHarvester, self).import_stage(harvest_object)
 
 
 class BerlinCKANHarvester(GovDataHarvester):
-    """A CKAN Harvester for Berlin sovling data compatibility problems."""
-    PORTAL = 'http://datenregister.berlin.de/'
+
+    '''A CKAN harvester for Berlin solving data compatibility problems.'''
+
+    implements(IHarvester)
+
+    def __init__(self, name='berlin_harvester'):
+        url_dict = config.get_harvester_urls(name)
+        log.debug('url_dict: %s', json.dumps(url_dict))
+        self.portal = url_dict['portal_url']
 
     def info(self):
-        return {'name': 'berlin',
-                'title': 'Berlin Harvester',
-                'description': 'A CKAN Harvester for Berlin solving data compatibility problems.'}
+        return {
+            'name': 'berlin',
+            'title': 'Datenportal Berlin',
+            'description': self.__doc__.split('\n')[0]
+        }
 
     def amend_package(self, package):
+        '''
+        Amends the package data
+        '''
+        if 'tags' in package:
+            package['tags'] = self.cleanse_tags(package['tags'])
+            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
 
         extras = package['extras']
 
-        if package['license_id'] == '':
+        if 'license_id' not in package or package['license_id'] == '':
             package['license_id'] = 'notspecified'
 
         # if sector is not set, set it to 'oeffentlich' (default)
@@ -348,129 +529,189 @@ class BerlinCKANHarvester(GovDataHarvester):
         if package['extras']['sector'] != 'oeffentlich':
             return False
 
+        # avoid ValidationError when extra dict
+        # key 'type' is also used by the internal CKAN validation,
+        # see GOVDATA-651
+        if 'type' in extras:
+            package['extras'].pop('type', None)
+
         valid_types = ['datensatz', 'dokument', 'app']
         if not package.get('type') or package['type'] not in valid_types:
             package['type'] = 'datensatz'
 
         package['groups'] = translate_groups(package['groups'], 'berlin')
-        default_portal = 'http://datenregister.berlin.de'
+
         if not extras.get('metadata_original_portal'):
-            extras['metadata_original_portal'] = default_portal
+            extras['metadata_original_portal'] = self.portal
         for resource in package['resources']:
             resource['format'] = resource['format'].lower()
         return True
 
     def import_stage(self, harvest_object):
-        package_dict = json.loads(harvest_object.content)
-        valid = self.amend_package(package_dict)
+        package = json.loads(harvest_object.content)
+        valid = self.amend_package(package)
 
         if not valid:
             return  # drop package
 
-        harvest_object.content = json.dumps(package_dict)
+        harvest_object.content = json.dumps(package)
         super(BerlinCKANHarvester, self).import_stage(harvest_object)
 
 
-class RLPCKANHarvester(GovDataHarvester):
-    """A CKAN Harvester for Rhineland-Palatinate sovling data compatibility problems."""
+class RlpCKANHarvester(GovDataHarvester):
+
+    '''A CKAN harvester for Rhineland-Palatinate solving data compatibility problems.'''
+
+    implements(IHarvester)
 
     def info(self):
-        return {'name': 'rlp',
-                'title': 'RLP Harvester',
-                'description': 'A CKAN Harvester for Rhineland-Palatinate solving data compatibility problems.'}
+        return {
+            'name': 'rlp',
+            'title': 'Datenportal Rheinland-Pfalz',
+            'description': self.__doc__.split('\n')[0]
+        }
 
-    def __init__(self):
+    def __init__(self, name='rlp_harvester'):
+        schema_url = config.get('ckanext.govdata.urls.schema')
+        groups_url = config.get('ckanext.govdata.urls.groups')
 
-        schema_url = CONFIG.get('URLs', 'schema')
-        groups_url = CONFIG.get('URLs', 'groups')
+        if schema_url is None:
+            error_message = 'Missing configuration value for {config_key}'.format(
+                config_key='ckanext.govdata.urls.schema'
+            )
+            raise ValueError(error_message)
+        if groups_url is None:
+            error_message = 'Missing configuration value for {config_key}'.format(
+                config_key='ckanext.govdata.urls.groups'
+            )
+            raise ValueError(error_message)
+
+        log.debug('schema_url: ' + schema_url)
+        log.debug('groups_url: ' + groups_url)
 
         self.schema = json.loads(urllib2.urlopen(schema_url).read())
         self.govdata_groups = json.loads(urllib2.urlopen(groups_url).read())
-        self.link_checker = LinkChecker()
 
-    def amend_package(self, package_dict):
+        url_dict = config.get_harvester_urls(name)
+        log.debug('url_dict: %s', json.dumps(url_dict))
+        self.portal = url_dict['portal_url']
+
+    @classmethod
+    def has_possible_contact_fields(cls, package_dict):
+        '''
+        Has the given dict possible contact fields?
+        '''
+        if 'point_of_contact' in package_dict and \
+            'point_of_contact_address' in package_dict and \
+            'email' in package_dict['point_of_contact_address']:
+            return True
+        return False
+
+    def amend_package(self, package):
+        '''
+        Amends the package data
+        '''
+        if 'tags' in package:
+            package['tags'] = self.cleanse_tags(package['tags'])
+            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+
         # manually set package type
-        if all([resource['format'].lower() == 'pdf' for resource in package_dict['resources']]):
-            package_dict['type'] = 'dokument'
-        else:
-            package_dict['type'] = 'datensatz'
+        package['type'] = 'datensatz'
+        if all([resource['format'].lower() == 'pdf' for resource in package['resources']]):
+            package['type'] = 'dokument'
 
-        for resource in package_dict['resources']:
+        for resource in package['resources']:
             resource['format'] = resource['format'].lower()
 
-        assert_author_fields(package_dict, package_dict['point_of_contact'],
-                             package_dict['point_of_contact_address']['email'])
+        if self.has_possible_contact_fields(package):
+            assert_author_fields(
+                package,
+                package['point_of_contact'],
+                package['point_of_contact_address']['email']
+            )
 
-        package_dict['extras']['metadata_original_portal'] = 'http://daten.rlp.de'
-        package_dict['extras']['sector'] = 'oeffentlich'
+        package['extras']['metadata_original_portal'] = self.portal
+        package['extras']['sector'] = 'oeffentlich'
 
         # the extra fields are present as CKAN core fields in the remote
         # instance: copy all content from these fields into the extras field
         for extra_field in self.schema['properties']['extras']['properties'].keys():
-            if extra_field in package_dict:
-                package_dict['extras'][extra_field] = package_dict[extra_field]
-                del package_dict[extra_field]
+            if extra_field in package:
+                package['extras'][extra_field] = package[extra_field]
+                del package[extra_field]
 
         # convert license cc-by-nc to cc-nc
-        if package_dict['extras']['terms_of_use']['license_id'] == 'cc-by-nc':
-            package_dict['extras']['terms_of_use']['license_id'] = 'cc-nc'
+        if package['extras']['terms_of_use']['license_id'] == 'cc-by-nc':
+            package['extras']['terms_of_use']['license_id'] = 'cc-nc'
 
-        package_dict['license_id'] = package_dict['extras']['terms_of_use']['license_id']
+        package['license_id'] = package[
+            'extras']['terms_of_use']['license_id']
 
         # GDI related patch
-        if 'gdi-rp' in package_dict['groups']:
-            package_dict['type'] = 'datensatz'
+        if 'gdi-rp' in package['groups']:
+            package['type'] = 'datensatz'
 
         # map these two group names to schema group names
-        if 'justiz' in package_dict['groups']:
-            package_dict['groups'].append('gesetze_justiz')
-            package_dict['groups'].remove('justiz')
+        if 'justiz' in package['groups']:
+            package['groups'].append('gesetze_justiz')
+            package['groups'].remove('justiz')
 
-        if 'transport' in package_dict['groups']:
-            package_dict['groups'].append('transport_verkehr')
-            package_dict['groups'].remove('transport')
+        if 'transport' in package['groups']:
+            package['groups'].append('transport_verkehr')
+            package['groups'].remove('transport')
 
         # filter illegal group names
-        package_dict['groups'] = [group for group in package_dict['groups'] if group in self.govdata_groups]
+        package['groups'] = [
+            group for group in package['groups'] if group in self.govdata_groups]
 
     def import_stage(self, harvest_object):
-        package_dict = json.loads(harvest_object.content)
+        package = json.loads(harvest_object.content)
 
-        dataset = package_dict['extras']['content_type'].lower() == 'datensatz'
-        if not dataset and not 'gdi-rp' in package_dict['groups']:
+        dataset = package['extras']['content_type'].lower() == 'datensatz'
+        if not dataset and 'gdi-rp' not in package['groups']:
             return  # skip all non-datasets for the time being
 
         try:
-            self.amend_package(package_dict)
-        except ValueError, e:
-            self._save_object_error(str(e), harvest_object)
-            log.error('RLP: ' + str(e))
+            self.amend_package(package)
+        except ValueError, error:
+            self._save_object_error(str(error), harvest_object)
+            log.exception(error)
             return
 
-        harvest_object.content = json.dumps(package_dict)
-        super(RLPCKANHarvester, self).import_stage(harvest_object)
+        harvest_object.content = json.dumps(package)
+        super(RlpCKANHarvester, self).import_stage(harvest_object)
 
 
 class DatahubCKANHarvester(GroupCKANHarvester):
-    """A CKAN Harvester for Datahub IO importing a small set of packages."""
 
-    portal = 'http://datahub.io/'
+    '''A CKAN harvester for Datahub.io importing a small set of packages.'''
 
-    valid_packages = ['hbz_unioncatalog', 'lobid-resources',
-                      'deutsche-nationalbibliografie-dnb',
-                      'dnb-gemeinsame-normdatei']
+    implements(IHarvester)
+
+    valid_packages = [
+        'hbz_unioncatalog',
+        'lobid-resources',
+        'deutsche-nationalbibliografie-dnb',
+        'dnb-gemeinsame-normdatei'
+    ]
+
+    def __init__(self, name='datahub_harvester'):
+        url_dict = config.get_harvester_urls(name)
+        log.debug('url_dict: %s', json.dumps(url_dict))
+        self.portal_url = url_dict['portal_url']
 
     def info(self):
-        return {'name': 'datahub',
-                'title': 'Datahub IO Harvester',
-                'description': 'A CKAN Harvester for Datahub IO importing a '
-                               'small set of packages.'}
+        return {
+            'name': 'datahub',
+            'title': 'Datahub.io',
+            'description': self.__doc__.split('\n')[0]
+        }
 
     def fetch_stage(self, harvest_object):
         log.debug('In CKANHarvester fetch_stage')
         self._set_config(harvest_object.job.source.config)
 
-        if harvest_object.guid not in DatahubCKANHarvester.valid_packages:
+        if harvest_object.guid not in self.valid_packages:
             return None
 
         # Get source URL
@@ -481,229 +722,69 @@ class DatahubCKANHarvester(GroupCKANHarvester):
         # Get contents
         try:
             content = self._get_content(url)
-        except Exception, e:
+        except Exception, error:
             self._save_object_error('Unable to get content for package:'
-                                    '%s: %r' % (url, e), harvest_object)
+                                    '%s: %r' % (url, error), harvest_object)
+            log.exception(error)
             return None
 
-        # Save the fetched contents in the HarvestObject
+        # Save the fetched contents in the harvest object
         harvest_object.content = content
         harvest_object.save()
         return True
 
-    def package_valid(self, package_name):
-        return package_name in DatahubCKANHarvester.valid_packages
+    def amend_package(self, package):
+        '''
+        Amends the package data
+        '''
+        if 'tags' in package:
+            package['tags'] = self.cleanse_tags(package['tags'])
+            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
 
-    def amend_package(self, package_dict):
-        portal = 'http://datahub.io/'
+        package['type'] = 'datensatz'
 
-        package_dict['type'] = 'datensatz'
-
-        for resource in package_dict['resources']:
+        for resource in package['resources']:
             resource['format'] = resource['format'].lower()
 
-        package_dict['extras']['metadata_original_portal'] = portal
-        package_dict['groups'].append('bildung_wissenschaft')
+        package['extras']['metadata_original_portal'] = self.portal_url
+        package['groups'].append('bildung_wissenschaft')
 
     def import_stage(self, harvest_object):
-        
         package = json.loads(harvest_object.content)
-
         self.amend_package(package)
 
         harvest_object.content = json.dumps(package)
         super(DatahubCKANHarvester, self).import_stage(harvest_object)
 
 
-class KoelnCKANHarvester(GroupCKANHarvester):
-    '''
-    A CKAN Harvester for Koeln. The Harvester retrieves a JSON dump,
-    which will be loaded to CKAN.
-    '''
+class OpenNrwCKANHarvester(GroupCKANHarvester):
 
-    city = 'Koeln'
+    '''A CKAN Harvester for OpenNRW'''
+
+    def __init__(self, name='opennrw_harvester'):
+        url_dict = config.get_harvester_urls(name)
+        log.debug('url_dict: %s', json.dumps(url_dict))
+        self.portal_url = url_dict['portal_url']
 
     def info(self):
-        return {'name': 'koeln',
-                'title': 'Koeln CKAN Harvester',
-                'description': 'A CKAN Harvester for Koeln.'}
+        return {
+            'name': 'opennrw',
+            'title': 'Datenportal OpenNRW',
+            'description': self.__doc__.split('\n')[0]
+        }
 
-
-    def gather_stage(self, harvest_job):
-        """Retrieve datasets"""
-
-        log.debug('In ' + self.city + 'CKANHarvester gather_stage (%s)' % harvest_job.source.url)
-        package_ids = []
-        self._set_config(None)
-
-        base_url = harvest_job.source.url.rstrip('/')
-        package_list_url = base_url + '/3/action/package_list'
-        content = self._get_content(package_list_url)
-
-        content_json = json.loads(content)
-        package_ids = content_json['result']
-
-        try:
-            object_ids = []
-            if len(package_ids):
-                for package_id in package_ids:
-                    obj = HarvestObject(guid=package_id, job=harvest_job)
-                    obj.save()
-                    object_ids.append(obj.id)
-                return object_ids
-
-            else:
-                self._save_gather_error('No packages received for URL: %s' % url,
-                                        harvest_job)
-                return None
-        except Exception, e:
-            self._save_gather_error('%r' % e.message, harvest_job)
-
-
-    def fetch_stage(self, harvest_object):
-        log.debug('In ' + self.city +'CKANHarvester fetch_stage')
-        self._set_config(None)
-
-        # Get contents
-        package_get_url = ''
-        try:
-            base_url = harvest_object.source.url.rstrip('/')
-
-            package_get_url = base_url + '/3/ogdp/action/package_show?id=' + harvest_object.guid
-            content = self._get_content(package_get_url.encode("utf-8"))
-            package = json.loads(content)
-            harvest_object.content = json.dumps(package['result'][0])
-            harvest_object.save()
-
-        except Exception, e:
-            self._save_object_error('Unable to get content for package: %s: %r' % \
-                                    (package_get_url, e), harvest_object)
-            return None
-
-        return True
-
+    def amend_package(self, package):
+        '''
+        Amends the package data
+        '''
+        if 'tags' in package:
+            package['tags'] = self.cleanse_tags(package['tags'])
+            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
 
     def import_stage(self, harvest_object):
-        package_dict = json.loads(harvest_object.content)
-        try:
-            self.amend_package(package_dict)
-        except ValueError, e:
-            self._save_object_error(str(e), harvest_object)
-            log.error(self.city +': ' + str(e))
-            return
+        package = json.loads(harvest_object.content)
+        package['extras']['metadata_original_portal'] = self.portal_url
+        package['extras']['metadata_transformer'] = ''
 
-        harvest_object.content = json.dumps(package_dict)
-        super(KoelnCKANHarvester, self).import_stage(harvest_object)
-
-
-    def amend_package(self, package):
-        # map these two group names to schema group names
-        out = []
-        if 'Geo' in package['groups']:
-            package['groups'].append('geo')
-            package['groups'].remove('Geo')
-
-        if 'Bildung und Wissenschaft' in package['groups']:
-            package['groups'].append(u'bildung_wissenschaft')
-            package['groups'].remove('Bildung und Wissenschaft')
-
-        if 'Gesetze und Justiz' in package['groups']:
-            package['groups'].append(u'gesetze_justiz')
-            package['groups'].remove('Gesetze und Justiz')
-
-        if 'Gesundheit' in package['groups']:
-            package['groups'].append(u'gesundheit')
-            package['groups'].remove('Gesundheit')
-
-        if 'Infrastruktur' in package['groups']:
-            package['groups'].append(u'infrastruktur_bauen_wohnen')
-            package['groups'].remove('Infrastruktur')
-            package['groups'].remove('Bauen und Wohnen')
-
-        if 'Kultur' in package['groups']:
-            package['groups'].append(u'kultur_freizeit_sport_tourismus')
-            package['groups'].remove('Kultur')
-            package['groups'].remove('Freizeit')
-            package['groups'].remove('Sport und Tourismus')
-
-        if 'Politik und Wahlen' in package['groups']:
-            package['groups'].append(u'politik_wahlen')
-            package['groups'].remove('Politik und Wahlen')
-
-        if 'Soziales' in package['groups']:
-            package['groups'].append(u'soziales')
-            package['groups'].remove('Soziales')
-
-        if 'Transport und Verkehr' in package['groups']:
-            package['groups'].append(u'transport_verkehr')
-            package['groups'].remove('Transport und Verkehr')
-
-        if 'Umwelt und Klima' in package['groups']:
-            package['groups'].append(u'umwelt_klima')
-            package['groups'].remove('Umwelt und Klima')
-
-        if 'Verbraucherschutz' in package['groups']:
-            package['groups'].append(u'verbraucher')
-            package['groups'].remove('Verbraucherschutz')
-
-        if 'Verwaltung' in package['groups']:
-            package['groups'].append(u'verwaltung')
-            package['groups'].remove('Verwaltung')
-            package['groups'].remove('Haushalt und Steuern')
-
-        if 'Wirtschaft und Arbeit' in package['groups']:
-            package['groups'].append(u'wirtschaft_arbeit')
-            package['groups'].remove('Wirtschaft und Arbeit')
-
-        for cat in package['groups']:
-            if 'Bev' in cat:
-                package['groups'].append(u'bevoelkerung')
-
-        from ckan.lib.munge import munge_title_to_name
-
-        name = package['name']
-        try:
-            name = munge_title_to_name(name).replace('_', '-')
-            while '--' in name:
-                name = name.replace('--', '-')
-        except Exception, e:
-            log.debug('Encoding Error ' + str(e))
-
-        package['name'] = name
-
-
-class BonnCKANHarvester(KoelnCKANHarvester):
-    '''
-    A CKAN Harvester for Bonn.
-    '''
-
-    city = 'Bonn'
-
-    def info(self):
-        return {'name': 'bonn',
-                'title': 'Bonn CKAN Harvester',
-                'description': 'A CKAN Harvester for Bonn.'}
-
-
-    def amend_package(self, package):
-        super(BonnCKANHarvester, self).amend_package(package)
-
-        if u'Öffentliche Verwaltung' in package['groups']:
-            package['groups'].append('verwaltung')
-	    package['groups'].remove(u'Öffentliche Verwaltung')
-	if u'Haushalt und Steuern' in package['groups']:
-            package['groups'].append('politik_wahlen')
-            package['groups'].remove('Haushalt und Steuern')
-	if u'Geographie' in package['groups']:
-            package['groups'].append('geo')
-            package['groups'].remove(u'Geographie')
-            package['groups'].remove(u'Geologie und Geobasisdaten')
-	if u'Politik und Wahlen' in package['groups']:
-            package['groups'].append('politik_wahlen')
-	    package['groups'].remove(u'Politik und Wahlen')
-	if u'Bevölkerung' in package['groups']:
-	    package['groups'].append('bevoelkerung')
-	    package['groups'].remove(u'Bevölkerung')
-
-	package['license_id'] = 'dl-de-by-1.0' if package['license_id'] == 'dl-de-by' else package['license_id']
-	package['extras']['metadata_original_portal'] = 'http://opendata.bonn.de/'
+        harvest_object.content = json.dumps(package)
+        super(OpenNrwCKANHarvester, self).import_stage(harvest_object)

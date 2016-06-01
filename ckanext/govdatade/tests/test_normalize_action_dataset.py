@@ -78,5 +78,4 @@ def test_extras_field():
     normalize_action_dataset(dataset)
 
     expectation = {u'sector': u'oeffentlich', u'tag_sources': []}
-    print dataset['extras']
     assert dataset['extras'] == expectation
