@@ -3,12 +3,19 @@
 
 from ckanext.govdatade.harvesters.ckanharvester import GovDataHarvester
 from ckanext.govdatade.harvesters.ckanharvester import BerlinCKANHarvester
-from ckanext.govdatade.harvesters.ckanharvester import GroupCKANHarvester
 from ckanext.govdatade.harvesters.ckanharvester import RlpCKANHarvester
+from ckanext.govdatade.harvesters.ckanharvester import HamburgCKANHarvester
+from ckanext.govdatade.harvesters.ckanharvester import OpenNrwCKANHarvester
+from mock import patch, Mock, ANY, call
 
 import os
 import json
+import httpretty
 import unittest
+
+
+class DummyClass:
+    pass
 
 
 class GovDataHarvesterTest(unittest.TestCase):
@@ -44,11 +51,9 @@ class GovDataHarvesterTest(unittest.TestCase):
 
         self.assertRaises(ValueError, harvester.compare_metadata_modified, remoteDatetime, localDatetime)
 
-class GroupCKANHarvesterTest(unittest.TestCase):
-
     def test_cleanse_tags_comma_separated(self):
 
-        harvester = GroupCKANHarvester()
+        harvester = GovDataHarvester()
         tags = ['tagone, tagtwo']
 
         cleansed_tags = harvester.cleanse_tags(tags)
@@ -60,7 +65,7 @@ class GroupCKANHarvesterTest(unittest.TestCase):
         self.assertEqual(cleansed_tags, 'tagone-tagtwo-tagthree-tagfour')
 
     def test_cleanse_tags_special_character(self):
-        harvester = GroupCKANHarvester()
+        harvester = GovDataHarvester()
 
         tags = ['tag/one, tag/two, Tag/three']
         cleansed_tags = harvester.cleanse_tags(tags)
@@ -95,12 +100,141 @@ class GroupCKANHarvesterTest(unittest.TestCase):
         ])
 
     def test_cleanse_tags_replace_whitespace_characters(self):
-        harvester = GroupCKANHarvester()
+        harvester = GovDataHarvester()
 
         tags = ['tag  one', 'tag two']
         cleansed_tags = harvester.cleanse_tags(tags)
 
         self.assertEqual(cleansed_tags, ['tag--one', 'tag-two'])
+
+    @httpretty.activate
+    @patch("ckanext.harvest.harvesters.ckanharvester.CKANHarvester.gather_stage")
+    def test_gather_stage(self, mock_super):
+        # prepare
+        harvester = GovDataHarvester()
+        package_ids = ['abc', 'efg']
+        source_id = 'xyz'
+        source_url = 'http://test.de/'
+        source = DummyClass()
+        source.id = source_id
+        source.config = ''
+        source.url = source_url
+        harvest_job = DummyClass()
+        harvest_job.source = source
+
+        httpretty.HTTPretty.allow_net_connect = False
+        url = source_url + 'api/2/rest/package'
+        response = '[' + ",".join(['"' + package_id + '"' for package_id in package_ids]) + ']'
+        # self._get_content(url) # url = harvest_job.source.url + '/api/2/rest/package'
+        httpretty.register_uri(httpretty.GET, url, status=200, body=response)
+
+        harvester.delete_deprecated_datasets = Mock()
+
+        # execute
+        harvester.gather_stage(harvest_job)
+
+        # verify
+        self.assertTrue(httpretty.has_request())
+        harvester.delete_deprecated_datasets.assert_called_with(package_ids, harvest_job)
+        mock_super.assert_called_once_with(harvest_job)
+
+    @patch('ckan.plugins.toolkit.get_action')
+    def test_delete_deprecated_datasets(self, mock_get_action):
+        # prepare
+        harvester = GovDataHarvester()
+        harvester.portal = 'http://www.regionalstatisitk.de/'
+        package_id_deprecated = 'abc'
+        package_id_existent = 'efg'
+        remote_package_ids = [package_id_existent]
+        local_package_ids = [package_id_deprecated, package_id_existent]
+        source_id = 'xyz'
+        source_url = 'http://test.de/'
+        source = DummyClass()
+        source.id = source_id
+        source.config = ''
+        source.url = source_url
+        harvest_job = DummyClass()
+        harvest_job.source = source
+        harvest_job.source_id = source_id
+
+        # 1) harvester_package = get_action('package_show')(context, {'id': harvest_job.source_id})
+        org_id = '1234567890'
+        harvest_source_package_dict = {
+                       'id': '0123456789',
+                       'name': 'test-harvester',
+                       'owner_org': org_id
+                       }
+        # 2) result = get_action('package_search')({}, query_object)
+        package_deprecated = {
+                       'id': package_id_deprecated,
+                       'name': 'deprectated-package',
+                       'owner_org': org_id}
+        package_existent = {
+                       'id': package_id_existent,
+                       'name': 'existent-package',
+                       'owner_org': org_id}
+        package_search_result = {'results': [package_deprecated, package_existent]}
+        mock_action_methods = Mock("action-methods")
+        mock_action_methods.side_effect = [harvest_source_package_dict, package_search_result]
+        # 3) get_action('bulk_update_delete')(context, {'datasets': deprecated_ids, 'org_id': organization_id})
+        mock_get_action.return_value = mock_action_methods
+        # self.rename_datasets_before_delete(deprecated_package_dicts)
+        harvester.rename_datasets_before_delete = Mock()
+        # self.delete_packages(deprecated_ids)
+        harvester.delete_packages = Mock()
+        # self.log_deleted_packages_in_file(deprecated_package_dicts, checkpoint_end)
+        harvester.log_deleted_packages_in_file = Mock()
+
+        # execute
+        harvester.delete_deprecated_datasets(remote_package_ids, harvest_job)
+
+        # verify
+        expected_get_action_call_count = 2
+        self.assertEqual(mock_get_action.call_count, expected_get_action_call_count)
+        mock_get_action.assert_any_call("package_show")
+        mock_get_action.assert_any_call("package_search")
+
+        self.assertEqual(mock_action_methods.call_count, expected_get_action_call_count)
+        expected_action_calls_original = [
+            call({'ignore_auth': True, 'model': ANY, 'session': ANY, 'user': u'harvest', 'api_version': 1},
+                 {'id': source_id}),
+            call({}, {'fq': ('+owner_org:"%s" +metadata_original_portal:"%s" -type:"harvest"' %
+                             (org_id, harvester.portal)),
+                      'rows': 500, 'start': 0})
+        ]
+        mock_action_methods.assert_has_calls(expected_action_calls_original)
+
+        deprecated_package_dicts = [package_deprecated]
+        harvester.rename_datasets_before_delete.assert_called_with(deprecated_package_dicts)
+        harvester.delete_packages.assert_called_once_with(set([package_id_deprecated]))
+        harvester.log_deleted_packages_in_file.assert_called_with(deprecated_package_dicts, ANY)
+
+    @patch('ckan.plugins.toolkit.get_action')
+    def test_delete_packages(self, mock_get_action):
+        # prepare
+        package1_id = 'abc'
+        package2_id = 'efg'
+
+        mock_action_methods = Mock("action-methods")
+        # 3) get_action('package_delete')(context, {'id': to_delete_id})
+        mock_get_action.return_value = mock_action_methods
+
+        package_ids_to_delete = [package1_id, package2_id]
+
+        # execute
+        GovDataHarvester.delete_packages(package_ids_to_delete)
+
+        # verify
+        self.assertEqual(mock_get_action.call_count, 1)
+        mock_get_action.assert_any_call("package_delete")
+        self.assertEqual(mock_action_methods.call_count, len(package_ids_to_delete))
+        expected_action_calls_original = []
+        for to_delete_id in package_ids_to_delete:
+            expected_action_calls_original.append(
+                call({'ignore_auth': True, 'model': ANY, 'session': ANY, 'user': u'harvest',
+                      'api_version': 1},
+                     {'id': to_delete_id}))
+        mock_action_methods.assert_has_calls(expected_action_calls_original)
 
 class BerlinHarvesterTest(unittest.TestCase):
 
@@ -267,7 +401,7 @@ class BerlinHarvesterTest(unittest.TestCase):
 
         valid = harvester.amend_package(dataset)
         portal = dataset['extras']['metadata_original_portal']
-        self.assertEqual(portal, 'www.example.com')
+        self.assertEqual(portal, default)
         self.assertTrue(valid)
 
     def test_amend_package(self):
@@ -341,3 +475,168 @@ class RlpHarvesterTest(unittest.TestCase):
         self.assertNotIn('gdi-rp', package['groups'])
         self.assertIn('geo', package['groups'])
         self.assertEqual(package['type'], 'datensatz')
+
+class OpenNRWHarvesterTest(unittest.TestCase):
+
+    @patch("ckanext.govdatade.harvesters.ckanharvester.GovDataHarvester.import_stage")
+    def test_import_stage(self, mock_super_import_stage):
+        # prepare
+        harvester = OpenNrwCKANHarvester()
+        default = 'http://open.nrw/'
+        package = {'author':                   'OpenNRW',
+                   'author_email':             'opennrw@open.nrw',
+                   'groups':                   ['gesundheit', 'geo'],
+                   'tags':                     ['tag1', 'tag 2'],
+                   'license_id':               'cc-by',
+                   'resources':                [{'format': 'PDF', 'url': 'http://test.de'}],
+                   'type':                     'dataset',
+                   'extras':                   {'metadata_original_portal': 'foo',
+                                                'metadata_transformer': 'bar'}}
+        harvest_object = DummyClass()
+        harvest_object.content = json.dumps(package)
+
+        # execute
+        harvester.import_stage(harvest_object)
+
+        # verify
+        actual_harvest_object_content = json.loads(harvest_object.content)
+        self.assertEqual(['gesundheit', 'geo'], actual_harvest_object_content['groups'])
+        self.assertEqual([u'tag1', u'tag-2'], actual_harvest_object_content['tags'])
+        self.assertEqual(actual_harvest_object_content['type'], 'dataset')
+        self.assertEqual(actual_harvest_object_content['resources'][0]['format'], 'pdf')
+        portal = actual_harvest_object_content['extras']['metadata_original_portal']
+        self.assertEqual(portal, default)
+        metadata_transformer = actual_harvest_object_content['extras']['metadata_transformer']
+        self.assertEqual(metadata_transformer, '')
+        mock_super_import_stage.assert_called_once_with(harvest_object)
+
+class HamburgHarvesterTest(unittest.TestCase):
+
+    def test_hamburg_package_document(self):
+
+        package = {'author':                   'Hamburg',
+                   'author_email':             'hh@hamburg.de',
+                   'groups':                   ['transport-und-verkehr'],
+                   'tags':                   ['some tag', 'GovData'],
+                   'license_id':               'cc-by',
+                   'point_of_contact':         None,
+                   'point_of_contact_address': {'email': None},
+                   'resources':                [{'format': 'pdf'}],
+                   'type':                     'document',
+                   'extras':                   {'content_type': 'Kartenebene',
+                                                'terms_of_use': {'license_id':
+                                                                 'cc-by'}}}
+
+        harvester = HamburgCKANHarvester()
+        result = harvester.amend_package(package)
+        self.assertTrue(result)
+        self.assertIn('govdata', package['tags'])
+        self.assertIn('transport_verkehr', package['groups'])
+        self.assertEqual(package['type'], 'dokument')
+
+    def test_hamburg_package_dataset(self):
+
+        package = {'author':                   'Hamburg',
+                   'author_email':             'hh@hamburg.de',
+                   'groups':                   ['transport-und-verkehr'],
+                   'tags':                   ['some tag', 'GovData'],
+                   'license_id':               'cc-by',
+                   'point_of_contact':         None,
+                   'point_of_contact_address': {'email': None},
+                   'resources':                [{'format': 'pdf'}],
+                   'type':                     'dataset',
+                   'extras':                   {'content_type': 'Kartenebene',
+                                                'terms_of_use': {'license_id':
+                                                                 'cc-by'}}}
+
+        harvester = HamburgCKANHarvester()
+        result = harvester.amend_package(package)
+        self.assertTrue(result)
+        self.assertIn('govdata', package['tags'])
+        self.assertIn('transport_verkehr', package['groups'])
+        self.assertEqual(package['type'], 'datensatz')
+
+    def test_hamburg_package_skipping_without_tag_govdata(self):
+
+        package = {'author':                   'Hamburg',
+                   'author_email':             'hh@hamburg.de',
+                   'groups':                   ['transport-und-verkehr'],
+                   'tags':                   ['some tag'],
+                   'license_id':               'cc-by',
+                   'point_of_contact':         None,
+                   'point_of_contact_address': {'email': None},
+                   'resources':                [{'format': 'pdf'}],
+                   'type':                     'document',
+                   'extras':                   {'content_type': 'Kartenebene',
+                                                'terms_of_use': {'license_id':
+                                                                 'cc-by'}}}
+
+        harvester = HamburgCKANHarvester()
+        result = harvester.amend_package(package)
+        self.assertFalse(result)
+        self.assertIn('some-tag', package['tags'])
+        self.assertIn('transport-und-verkehr', package['groups'])
+        self.assertEqual(package['type'], 'document')
+
+    def test_amend_portal_without_metadata_original_portal(self):
+
+        harvester = HamburgCKANHarvester()
+        default = 'http://suche.transparenz.hamburg.de/'
+
+        package = {'author':                   'Hamburg',
+                   'author_email':             'hh@hamburg.de',
+                   'groups':                   ['transport-und-verkehr'],
+                   'tags':                   ['some tag', 'GovData'],
+                   'license_id':               'cc-by',
+                   'point_of_contact':         None,
+                   'point_of_contact_address': {'email': None},
+                   'type': 'datensatz',
+                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
+                   'extras': {}}
+
+        valid = harvester.amend_package(package)
+        portal = package['extras']['metadata_original_portal']
+        self.assertEqual(portal, default)
+        self.assertTrue(valid)
+
+    def test_amend_portal_metadata_original_portal_none(self):
+
+        harvester = HamburgCKANHarvester()
+        default = 'http://suche.transparenz.hamburg.de/'
+
+        package = {'author':                   'Hamburg',
+                   'author_email':             'hh@hamburg.de',
+                   'groups':                   ['transport-und-verkehr'],
+                   'tags':                   ['some tag', 'GovData'],
+                   'license_id':               'cc-by',
+                   'point_of_contact':         None,
+                   'point_of_contact_address': {'email': None},
+                   'type': 'datensatz',
+                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
+                   'extras': {'metadata_original_portal': None}}
+
+        valid = harvester.amend_package(package)
+        portal = package['extras']['metadata_original_portal']
+        self.assertEqual(portal, default)
+        self.assertTrue(valid)
+
+    def test_amend_portal_metadata_original_portal_different(self):
+
+        harvester = HamburgCKANHarvester()
+        default = 'http://suche.transparenz.hamburg.de/'
+
+        package = {'author':                   'Hamburg',
+                   'author_email':             'hh@hamburg.de',
+                   'groups':                   ['transport-und-verkehr'],
+                   'tags':                   ['some tag', 'GovData'],
+                   'license_id':               'cc-by',
+                   'point_of_contact':         None,
+                   'point_of_contact_address': {'email': None},
+                   'type': 'datensatz',
+                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
+                   'extras': {'metadata_original_portal': 'www.example.com'}}
+
+        valid = harvester.amend_package(package)
+        portal = package['extras']['metadata_original_portal']
+        self.assertEqual(portal, default)
+        self.assertTrue(valid)

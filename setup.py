@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 import sys, os
 
-VERSION = '2.4.2'
+VERSION = '2.4.3'
 
 with open('base-requirements.txt') as f:
     required = [line.strip() for line in f]
@@ -47,6 +47,7 @@ setup(
     linkchecker = ckanext.govdatade.commands.linkchecker:LinkChecker
     report = ckanext.govdatade.commands.report:Report
     groupadder = ckanext.govdatade.commands.groupadder:GroupAdder
+    purge = ckanext.govdatade.commands.purge:Purge
 
     [nose.plugins]
     pylons = pylons.test:PylonsPlugin

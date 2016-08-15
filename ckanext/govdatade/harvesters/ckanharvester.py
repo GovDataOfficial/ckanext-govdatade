@@ -3,11 +3,14 @@
 '''
 Module for harvesting CKAN instances into GovData.
 '''
+import csv
 import datetime
+import time
 import json
 import logging
 import urllib2
 import re
+import uuid
 import ckanapi
 
 from ckanext.harvest.harvesters.ckanharvester import CKANHarvester
@@ -15,43 +18,27 @@ from ckanext.harvest.harvesters.ckanharvester import ContentFetchError
 from ckanext.harvest.interfaces import IHarvester
 from ckanext.govdatade.harvesters.translator import translate_groups
 from ckanext.govdatade.config import config
-from ckanext.govdatade.util import iterate_local_datasets
 from simplejson.scanner import JSONDecodeError
 
 from ckan import model
-from ckan.logic import get_action
-from ckan.logic.schema import default_create_package_schema
-from ckan.model import Session
+from ckan import plugins as p
+from ckan.model import Session, PACKAGE_NAME_MAX_LENGTH
 from ckan.plugins.core import implements
 
 log = logging.getLogger(__name__)
 
 
-def assert_author_fields(package_dict, author_alternative, author_email_alternative):
-    '''Assert author field presence.'''
-
-    if 'author' not in package_dict or not package_dict['author']:
-        package_dict['author'] = author_alternative
-
-    if 'author_email' not in package_dict or not package_dict['author_email']:
-        package_dict['author_email'] = author_email_alternative
-
-    if not package_dict['author']:
-        value_error = 'There is no author for package {id}'.format(
-            id=package_dict['id']
-        )
-        raise ValueError(value_error)
+NAME_RANDOM_STRING_LENGTH = 5
+NAME_DELETED_SUFFIX = "-deleted"
+NAME_MAX_LENGTH = PACKAGE_NAME_MAX_LENGTH-NAME_RANDOM_STRING_LENGTH-len(NAME_DELETED_SUFFIX)
+DELETE_PACKAGES_LOGFILE_PATH_DEFAULT = '/var/log/ckan/auto_delete_deprecated_packages.csv'
 
 
-class GroupCKANHarvester(CKANHarvester):
+class GovDataHarvester(CKANHarvester):
 
-    '''
-    An extended CKAN harvester that also imports remote groups,
-    for that api version 1 is enforced.
-    '''
+    '''The base harvester for GovData.de performing remote synchronization.'''
 
-    api_version = 1
-    '''Enforce API version 1 for enabling group import'''
+    implements(IHarvester)
 
     def __init__(self):
         schema_url = config.get('ckanext.govdata.urls.schema')
@@ -92,6 +79,22 @@ class GroupCKANHarvester(CKANHarvester):
         log.debug(config_settings_log_message)
 
     @classmethod
+    def assert_author_fields(cls, package_dict, author_alternative, author_email_alternative):
+        '''Assert author field presence.'''
+
+        if 'author' not in package_dict or not package_dict['author']:
+            package_dict['author'] = author_alternative
+
+        if 'author_email' not in package_dict or not package_dict['author_email']:
+            package_dict['author_email'] = author_email_alternative
+
+        if not package_dict['author']:
+            value_error = 'There is no author for package {id}'.format(
+                id=package_dict['id']
+            )
+            raise ValueError(value_error)
+
+    @classmethod
     def cleanse_tags(cls, tags):
         '''Cleans a set of given tags.'''
 
@@ -110,19 +113,11 @@ class GroupCKANHarvester(CKANHarvester):
 
         return cls.cleanse_special_characters(tags)
 
-
     @classmethod
     def cleanse_special_characters(cls, tag):
         '''Cleans a given tag of special characters.'''
         tag = tag.lower().strip()
         return re.sub(u'[^a-zA-ZÄÖÜäöü0-9 \-_\.]', '', tag).replace(' ', '-')
-
-
-class GovDataHarvester(GroupCKANHarvester):
-
-    '''The base harvester for GovData.de performing remote synchronization.'''
-
-    implements(IHarvester)
 
     @classmethod
     def build_context(cls):
@@ -130,42 +125,139 @@ class GovDataHarvester(GroupCKANHarvester):
             'model': model,
             'session': Session,
             'user': u'harvest',
-            'schema': default_create_package_schema(),
-            'validate': False,
-            'api_version': 1
+            'api_version': 1,
+            'ignore_auth': True
         }
 
     @classmethod
-    def portal_relevant(cls, portal):
-        def condition_check(dataset):
-            for extra in dataset['extras']:
-                if extra['key'] == 'metadata_original_portal':
-                    value = extra['value']
-                    value = value.lstrip('"').rstrip('"')
-                    return value == portal
+    def format_date_string(cls, time_in_seconds):
+        '''Converts a time stamp to a string according to a format specification.'''
 
-            return False
+        struct_time = time.localtime(time_in_seconds)
+        return time.strftime("%Y-%m-%d %H:%M", struct_time)
 
-        return condition_check
+    @classmethod
+    def create_new_name_for_deletion(cls, name):
+        '''Creates new name by adding suffix "-deleted" and random string to the given name'''
 
-    def delete_deprecated_datasets(self, context, remote_dataset_names):
+        random_suffix = str(uuid.uuid4())[:NAME_RANDOM_STRING_LENGTH]
+        new_name = name[:NAME_MAX_LENGTH]
+        return new_name + NAME_DELETED_SUFFIX + random_suffix
+
+    @classmethod
+    def rename_datasets_before_delete(cls, deprecated_package_dicts):
+        '''Renames the given packages to avoid name conflicts with deleted packages.'''
+
+        package_update = p.toolkit.get_action('package_update')
+        for package_dict in deprecated_package_dicts:
+            context = cls.build_context()
+            package_id = package_dict['id']
+            context.update({'id':package_id})
+            package_dict['name'] = cls.create_new_name_for_deletion(package_dict['name'])
+            # Update package
+            try:
+                package_update(context, package_dict)
+            except Exception as exception:
+                log.error("Unable updating package %s: %s", package_id, exception)
+
+    @classmethod
+    def log_deleted_packages_in_file(cls, deprecated_package_dicts, time_in_seconds):
+        '''Write the information about the deleted packages in a file.'''
+
+        path_to_logfile = config.get('ckanext.govdata.delete_deprecated_packages.logfile',
+                                     DELETE_PACKAGES_LOGFILE_PATH_DEFAULT)
+        if path_to_logfile:
+            log.debug("Logging to file %s.", path_to_logfile)
+            with open(path_to_logfile, 'a') as logfile:
+                for package_dict in deprecated_package_dicts:
+                    line = ([package_dict['id'], package_dict['name'], 'deleted',
+                             cls.format_date_string(time_in_seconds)])
+                    csv.writer(logfile).writerow(line)
+        else:
+            log.error("Could not get log file path from configuration!")
+
+    @classmethod
+    def delete_packages(cls, package_ids):
+        '''Deletes the packages belonging to the given package ids.'''
+
+        package_delete = p.toolkit.get_action('package_delete')
+        for to_delete_id in package_ids:
+            context = cls.build_context()
+            try:
+                package_delete(context, {'id': to_delete_id})
+            except Exception as exception:
+                log.error("Unable deleting package with id %s: %s", package_id, exception)
+
+    def delete_deprecated_datasets(self, remote_dataset_ids, harvest_job):
         '''
         Deletes deprecated datasets
         '''
-        package_update = get_action('package_update')
 
-        local_datasets = iterate_local_datasets(context)
-        filtered = filter(self.portal_relevant(self.portal), local_datasets)
-        local_dataset_names = map(lambda dataset: dataset['name'], filtered)
+        starttime = time.time()
+        # load harvester configuration
+        context = self.build_context()
+        harvester_package = p.toolkit.get_action('package_show')(context, {'id': harvest_job.source_id})
+        # Local harvest source organization
+        organization_id = harvester_package.get('owner_org')
+        log.info("delete_deprecated_datasets: Started at %s. Org-ID: %s. Portal: %s.",
+                 self.format_date_string(starttime), str(organization_id), str(self.portal))
 
-        deprecated = set(local_dataset_names) - set(remote_dataset_names)
-        log.info('Found %s deprecated datasets.', len(deprecated))
+        # check if the information about the source portal is present
+        if self.portal:
+            # get all datasets of this organization step by step
+            local_dataset_ids = []
+            deprecated_ids_total = []
+            offset = 0
+            count = 0
+            rows = 500
+            package_search = p.toolkit.get_action('package_search')
+            while offset <= count:
+                query_object = {
+                    "fq": '+owner_org:"' + organization_id + '" +metadata_original_portal:"' + self.portal
+                          + '" -type:"harvest"',
+                    "rows": rows,
+                    "start": offset
+                    }
+                result = package_search({}, query_object)
+                datasets = result["results"]
+                count += len(datasets)
+                log.debug("offset: %s, count: %s", str(offset), str(count))
+                offset += rows
 
-        for local_dataset in filtered:
-            if local_dataset['name'] in deprecated:
-                local_dataset['state'] = 'deleted'
-                local_dataset['tags'].append({'name': 'deprecated'})
-                package_update(context, local_dataset)
+                if count != 0:
+                    local_dataset_ids_sub = [x["id"] for x in datasets]
+                    local_dataset_ids.extend(local_dataset_ids_sub)
+                    deprecated_ids = set(local_dataset_ids_sub) - set(remote_dataset_ids)
+                    log.debug('Found %s deprecated datasets.', len(deprecated_ids))
+                    if deprecated_ids:
+                        deprecated_ids_total.extend(deprecated_ids)
+                        checkpoint_start = time.time()
+                        # Rename datasets before deleting, because of possible name conflicts
+                        deprecated_package_dicts = [x for x in datasets if x['id'] in deprecated_ids]
+                        self.rename_datasets_before_delete(deprecated_package_dicts)
+                        checkpoint_end = time.time()
+                        log.debug("Time taken for renaming %s datasets: %s.",
+                                  len(deprecated_ids), str(checkpoint_end-checkpoint_start))
+
+                        # delete deprecated datasets
+                        checkpoint_start = time.time()
+                        self.delete_packages(deprecated_ids)
+                        checkpoint_end = time.time()
+                        log.debug("Deleted %s deprecated datasets. Time taken for deletion: %s.",
+                                  len(deprecated_ids), str(checkpoint_end-checkpoint_start))
+                        # Logging id, name and time to file system
+                        deprecated_package_dicts = [x for x in datasets if x['id'] in deprecated_ids]
+                        self.log_deleted_packages_in_file(deprecated_package_dicts, checkpoint_end)
+
+            log.debug("Local datasets: %s, remote datasets: %s", len(local_dataset_ids),
+                      len(remote_dataset_ids))
+        else:
+            log.warn("Could not get information about the source portal for harvester %s."
+                     " -> SKIPPING deletion of deprecated datasets!", harvester_package['name'])
+
+        endtime = time.time()
+        log.info("delete_deprecated_datasets: Finished at %s. Deleted %s deprecated datasets. Duration: %s",
+                 self.format_date_string(endtime), len(deprecated_ids_total), str(endtime-starttime))
 
     @classmethod
     def compare_metadata_modified(cls, remote_md_modified, local_md_modified):
@@ -188,6 +280,7 @@ class GovDataHarvester(GroupCKANHarvester):
 
     def verify_transformer(self, remote_dataset):
         '''Based on metadata_transformer, this method checks, if a dataset should be imported.'''
+        # FIXME : Replace Remote CKAN api call with CKAN internal get_action
         registry = ckanapi.RemoteCKAN(
             config.get('ckanext.govdata.harvester.ckan.api.base.url')
         )
@@ -271,16 +364,25 @@ class GovDataHarvester(GroupCKANHarvester):
             return True
 
     def gather_stage(self, harvest_job):
-        '''Retrieve local datasets for synchronization.'''
+        '''Retrieve remote dataset ids for synchronization.'''
         try:
+            url = None
             self._set_config(harvest_job.source.config)
-            content = self._get_content(harvest_job.source.url)
 
             base_url = harvest_job.source.url.rstrip('/')
+            # save current api version
+            api_version_original = self.api_version
+            self.api_version = 2 # api version 2 is getting ids instead of names
             base_rest_url = base_url + self._get_rest_api_offset()
+            # revert api version
+            self.api_version = api_version_original
             url = base_rest_url + '/package'
+            log.debug("gather_stage: package_url = " + url)
 
             content = self._get_content(url)
+            package_ids = json.loads(content)
+            self.delete_deprecated_datasets(package_ids, harvest_job)
+
         except JSONDecodeError as err:
             self._save_gather_error(err.message, harvest_job)
             return None
@@ -344,7 +446,7 @@ class RostockCKANHarvester(GovDataHarvester):
         super(RostockCKANHarvester, self).import_stage(harvest_object)
 
 
-class HamburgCKANHarvester(GroupCKANHarvester):
+class HamburgCKANHarvester(GovDataHarvester):
 
     '''A CKAN harvester for Hamburg solving data compatibility problems.'''
 
@@ -380,6 +482,7 @@ class HamburgCKANHarvester(GroupCKANHarvester):
 
             remote_metadata_original_id = extras.get(
                 'metadata_original_id', None)
+            # FIXME : Replace Remote CKAN api call with CKAN internal get_action
             registry = ckanapi.RemoteCKAN(
                 config.get('ckanext.govdata.harvester.ckan.api.base.url')
             )
@@ -439,10 +542,9 @@ class HamburgCKANHarvester(GroupCKANHarvester):
         log.debug('After: ')
         log.debug(package['groups'])
 
-        if not extras.get('metadata_original_portal'):
-            extras['metadata_original_portal'] = self.portal
+        extras['metadata_original_portal'] = self.portal
 
-        assert_author_fields(
+        self.assert_author_fields(
             package,
             package.get('maintainer'),
             package.get('maintainer_email')
@@ -466,7 +568,6 @@ class HamburgCKANHarvester(GroupCKANHarvester):
         except Exception, error:
             self._save_object_error('Unable to get content for package: %s: %r' %
                                     (url, error), harvest_object)
-            import time
             log.debug('Going to sleep for 45s')
             time.sleep(45)
             log.debug('Wake up from sleep')
@@ -541,8 +642,7 @@ class BerlinCKANHarvester(GovDataHarvester):
 
         package['groups'] = translate_groups(package['groups'], 'berlin')
 
-        if not extras.get('metadata_original_portal'):
-            extras['metadata_original_portal'] = self.portal
+        extras['metadata_original_portal'] = self.portal
         for resource in package['resources']:
             resource['format'] = resource['format'].lower()
         return True
@@ -624,7 +724,7 @@ class RlpCKANHarvester(GovDataHarvester):
             resource['format'] = resource['format'].lower()
 
         if self.has_possible_contact_fields(package):
-            assert_author_fields(
+            self.assert_author_fields(
                 package,
                 package['point_of_contact'],
                 package['point_of_contact_address']['email']
@@ -682,7 +782,7 @@ class RlpCKANHarvester(GovDataHarvester):
         super(RlpCKANHarvester, self).import_stage(harvest_object)
 
 
-class DatahubCKANHarvester(GroupCKANHarvester):
+class DatahubCKANHarvester(GovDataHarvester):
 
     '''A CKAN harvester for Datahub.io importing a small set of packages.'''
 
@@ -698,7 +798,7 @@ class DatahubCKANHarvester(GroupCKANHarvester):
     def __init__(self, name='datahub_harvester'):
         url_dict = config.get_harvester_urls(name)
         log.debug('url_dict: %s', json.dumps(url_dict))
-        self.portal_url = url_dict['portal_url']
+        self.portal = url_dict['portal_url']
 
     def info(self):
         return {
@@ -746,7 +846,7 @@ class DatahubCKANHarvester(GroupCKANHarvester):
         for resource in package['resources']:
             resource['format'] = resource['format'].lower()
 
-        package['extras']['metadata_original_portal'] = self.portal_url
+        package['extras']['metadata_original_portal'] = self.portal
         package['groups'].append('bildung_wissenschaft')
 
     def import_stage(self, harvest_object):
@@ -757,14 +857,14 @@ class DatahubCKANHarvester(GroupCKANHarvester):
         super(DatahubCKANHarvester, self).import_stage(harvest_object)
 
 
-class OpenNrwCKANHarvester(GroupCKANHarvester):
+class OpenNrwCKANHarvester(GovDataHarvester):
 
     '''A CKAN Harvester for OpenNRW'''
 
     def __init__(self, name='opennrw_harvester'):
         url_dict = config.get_harvester_urls(name)
         log.debug('url_dict: %s', json.dumps(url_dict))
-        self.portal_url = url_dict['portal_url']
+        self.portal = url_dict['portal_url']
 
     def info(self):
         return {
@@ -781,10 +881,15 @@ class OpenNrwCKANHarvester(GroupCKANHarvester):
             package['tags'] = self.cleanse_tags(package['tags'])
             log.debug('Cleansed tags: %s', json.dumps(package['tags']))
 
+        for resource in package['resources']:
+            resource['format'] = resource['format'].lower()
+
+        package['extras']['metadata_original_portal'] = self.portal
+        package['extras']['metadata_transformer'] = ''
+
     def import_stage(self, harvest_object):
         package = json.loads(harvest_object.content)
-        package['extras']['metadata_original_portal'] = self.portal_url
-        package['extras']['metadata_transformer'] = ''
+        self.amend_package(package)
 
         harvest_object.content = json.dumps(package)
         super(OpenNrwCKANHarvester, self).import_stage(harvest_object)

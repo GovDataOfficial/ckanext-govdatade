@@ -9,6 +9,7 @@ from ckanext.govdatade.util import amend_portal
 from ckanext.govdatade.util import boolize_config_value
 from ckanext.govdatade.util import generate_link_checker_data
 from ckanext.govdatade.util import generate_schema_checker_data
+from ckanext.govdatade.util import normalize_action_dataset
 from ckanext.govdatade.config import config
 
 class UtilTest(unittest.TestCase):
@@ -38,6 +39,33 @@ class UtilTest(unittest.TestCase):
 
         for value in false_values:
             self.assertFalse(boolize_config_value(value))
+
+    def test_normalize_action_dataset(self):
+        # prepare
+        dataset_id = 1
+        dataset_name = 'example'
+        dataset = {
+            'id': dataset_id,
+            'name': dataset_name,
+            'groups': [{'name': 'group1'}, {'name': 'group2'}],
+            'tags': [{'name': 'tag1'}, {'name': 'tag2'}],
+            'extras': [
+                        {'key': 'temporal_granularity_factor', 'value': '1'},
+                        {'key': 'anotherKey', 'value': 'anotherValue'}
+                      ]
+        }
+
+        # execute
+        normalize_action_dataset(dataset)
+
+        # verify
+        extras_expected = {
+                    'temporal_granularity_factor': 1,
+                    'anotherKey': 'anotherValue'
+                }
+        self.assertDictEqual(dataset['extras'], extras_expected)
+        self.assertListEqual(dataset['groups'], ['group1', 'group2'])
+        self.assertListEqual(dataset['tags'], ['tag1', 'tag2'])
 
     def test_generate_link_checker_data_empty_urls_dict(self):
         # prepare

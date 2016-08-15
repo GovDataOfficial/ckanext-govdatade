@@ -266,16 +266,21 @@ class SchemaChecker(CkanCommand):
         for redis_id in redis_dataset_ids:
             if redis_id not in active_datasets:
                 record = redis_client.get(redis_id)
-                if record is not None:
+                if (record is not None) and (redis_id != 'general'):
                     record = self.evaluate_record(record)
+                    info_message = None
                     if link_checker.LinkChecker.SCHEMA_RECORD_KEY not in record:
                         redis_client.delete(redis_id)
+                        info_message = 'Deleted deprecated dataset for dataset'
                     else:
-                        record.pop(validator.SCHEMA_RECORD_KEY, None)
+                        return_value = record.pop(validator.SCHEMA_RECORD_KEY, None)
+                        if return_value is not None:
+                            redis_client.set(redis_id, record)
+                            info_message = 'Deleted deprecated schema violation for dataset'
 
-                    info_message = 'Deleted deprecated schema violation for dataset'
-                    info_message = info_message + ' %s from Redis' % str(redis_id)
-                    self.logger.info(info_message)
+                    if info_message is not None:
+                        info_message = info_message + ' %s from Redis' % str(redis_id)
+                        self.logger.info(info_message)
 
     def evaluate_record(self, record):
         try:

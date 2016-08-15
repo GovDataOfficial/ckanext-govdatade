@@ -11,7 +11,6 @@ import uuid
 import zipfile
 
 from urlparse import urlparse
-from zipfile import BadZipfile
 from codecs import BOM_UTF8
 
 from ckanext.harvest.model import HarvestObject
@@ -34,8 +33,23 @@ class JSONDumpBaseCKANHarvester(GovDataHarvester):
             'description': self.__doc__.split('\n')[0]
         }
 
+    def generate_id_from_name(self, package_name):
+        '''
+        Generates the id based on OID namespace and package name, this makes sure,
+        that packages with the same name get the same id
+        '''
+        return str(uuid.uuid5(uuid.NAMESPACE_OID, str(package_name)))
+
+    def delete_deprecated_datasets(self, packages, harvest_job):
+        '''
+        Wrapper for deleting deprecated packages.
+        '''
+
+        remote_dataset_ids = [self.generate_id_from_name(x["name"]) for x in packages]
+        super(JSONDumpBaseCKANHarvester, self).delete_deprecated_datasets(remote_dataset_ids, harvest_job)
+
     def gather_stage(self, harvest_job):
-        super(GovDataHarvester, self)._set_config(
+        super(JSONDumpBaseCKANHarvester, self)._set_config(
             harvest_job.source.config
         )
 
@@ -60,6 +74,8 @@ class JSONDumpBaseCKANHarvester(GovDataHarvester):
             object_ids.append(obj.id)
 
         if object_ids:
+            # delete obsolete packages
+            self.delete_deprecated_datasets(packages, harvest_job)
             return object_ids
         else:
             self._save_gather_error('No packages received for URL: %s' % harvest_job.source.url,
@@ -72,6 +88,95 @@ class JSONDumpBaseCKANHarvester(GovDataHarvester):
         if harvest_object.content:
             return True
         return False
+
+
+class JSONZipBaseHarvester(JSONDumpBaseCKANHarvester):
+
+    '''A base CKAN harvester for CKAN instances returning zipped JSON dump files.'''
+
+    def info(self):
+        return {
+            'name': 'json-zip-base',
+            'title': 'Base JSON zip harvester',
+            'description': self.__doc__.split('\n')[0]
+        }
+
+    @classmethod
+    def lstrip_bom(cls, content, bom=BOM_UTF8):
+        '''
+        Strips the BOM if present
+        '''
+        if content.startswith(bom):
+            return content[len(bom):]
+        else:
+            return content
+
+    def _get_content(self, url):
+        http_request = urllib2.Request(url=url)
+        # Set User-agent to a different value, because the BFJ-Harvester endpoint do not accept
+        # the default urllib2 User-agent.
+        http_request.add_header('User-agent', 'govdata-harvester')
+
+        try:
+            http_response = urllib2.urlopen(http_request)
+            log.debug('http headers: ' + str(http_request.header_items()))
+        except urllib2.HTTPError, e:
+            if e.getcode() == 404:
+                raise ContentNotFoundError('HTTP error: %s' % e.code)
+            else:
+                raise ContentFetchError('HTTP error: %s' % e.code)
+        except urllib2.URLError, e:
+            raise ContentFetchError('URL error: %s' % e.reason)
+        except httplib.HTTPException, e:
+            raise ContentFetchError('HTTP Exception: %s' % e)
+        return http_response.read()
+
+    def gather_stage(self, harvest_job, encoding=None):
+        self._set_config(harvest_job.source.config)
+        # Request all remote packages
+        try:
+            content = self._get_content(harvest_job.source.url)
+            log.debug('Grabbing zip file: %s', harvest_job.source.url)
+
+            object_ids = []
+            packages = []
+
+            file_content = StringIO.StringIO(content)
+            archive = zipfile.ZipFile(file_content, 'r')
+            for name in archive.namelist():
+                if name.endswith('.json'):
+                    archive_content = archive.read(name)
+                    if encoding is not None:
+                        archive_content = archive_content.decode(encoding)
+                    else:
+                        archive_content = self.lstrip_bom(archive_content)
+                    package = json.loads(archive_content)
+                    packages.append(package)
+                    obj = HarvestObject(guid=package['name'], job=harvest_job)
+                    obj.content = json.dumps(package)
+                    obj.save()
+                    object_ids.append(obj.id)
+
+        except zipfile.BadZipfile as err:
+            self._save_gather_error(err.message, harvest_job)
+            return None
+        except ContentFetchError as err:
+            self._save_gather_error(err.message, harvest_job)
+            return None
+        except Exception as err:
+            error_template = 'Unable to get content for URL: %s: %s'
+            error = error_template % (harvest_job.source.url, str(err))
+            self._save_gather_error(error, harvest_job)
+            return None
+
+        if object_ids:
+            # delete obsolete packages
+            super(JSONZipBaseHarvester, self).delete_deprecated_datasets(packages, harvest_job)
+            return object_ids
+        else:
+            self._save_gather_error('No packages received for URL: %s' % harvest_job.source.url,
+                                    harvest_job)
+            return None
 
 
 class BremenCKANHarvester(JSONDumpBaseCKANHarvester):
@@ -144,10 +249,8 @@ class BremenCKANHarvester(JSONDumpBaseCKANHarvester):
         if 'spatial-text' not in package['extras']:
             package['extras']['spatial-text'] = 'Bremen 04 0 11 000'
 
-        # generate id based on OID namespace and package name, this makes sure,
-        # that packages with the same name get the same id
-        package['id'] = str(
-            uuid.uuid5(uuid.NAMESPACE_OID, str(package['name'])))
+        package['id'] = self.generate_id_from_name(package['name'])
+
         for resource in package['resources']:
             resource['format'] = resource['format'].lower()
 
@@ -168,93 +271,6 @@ class BremenCKANHarvester(JSONDumpBaseCKANHarvester):
         del terms_of_use['licence_id']
         terms_of_use['license_url'] = terms_of_use['licence_url']
         del terms_of_use['licence_url']
-
-
-class JSONZipBaseHarvester(JSONDumpBaseCKANHarvester):
-
-    '''A base CKAN harvester for CKAN instances returning zipped JSON dump files.'''
-
-    def info(self):
-        return {
-            'name': 'json-zip-base',
-            'title': 'Base JSON zip harvester',
-            'description': self.__doc__.split('\n')[0]
-        }
-
-    @classmethod
-    def lstrip_bom(cls, content, bom=BOM_UTF8):
-        '''
-        Strips the BOM if present
-        '''
-        if content.startswith(bom):
-            return content[len(bom):]
-        else:
-            return content
-
-    def _get_content(self, url):
-        http_request = urllib2.Request(url=url)
-        # Set User-agent to a different value, because the BFJ-Harvester endpoint do not accept
-        # the default urllib2 User-agent.
-        http_request.add_header('User-agent', 'govdata-harvester')
-
-        try:
-            http_response = urllib2.urlopen(http_request)
-            log.debug('http headers: ' + str(http_request.header_items()))
-        except urllib2.HTTPError, e:
-            if e.getcode() == 404:
-                raise ContentNotFoundError('HTTP error: %s' % e.code)
-            else:
-                raise ContentFetchError('HTTP error: %s' % e.code)
-        except urllib2.URLError, e:
-            raise ContentFetchError('URL error: %s' % e.reason)
-        except httplib.HTTPException, e:
-            raise ContentFetchError('HTTP Exception: %s' % e)
-        return http_response.read()
-
-    def gather_stage(self, harvest_job, encoding=None):
-        self._set_config(harvest_job.source.config)
-        # Request all remote packages
-        try:
-            content = self._get_content(harvest_job.source.url)
-            log.debug('Grabbing zip file: %s', harvest_job.source.url)
-
-            object_ids = []
-            packages = []
-
-            file_content = StringIO.StringIO(content)
-            archive = zipfile.ZipFile(file_content, 'r')
-            for name in archive.namelist():
-                if name.endswith('.json'):
-                    archive_content = archive.read(name)
-                    if encoding is not None:
-                        archive_content = archive_content.decode(encoding)
-                    else:
-                        archive_content = self.lstrip_bom(archive_content)
-                    package = json.loads(archive_content)
-                    packages.append(package)
-                    obj = HarvestObject(guid=package['name'], job=harvest_job)
-                    obj.content = json.dumps(package)
-                    obj.save()
-                    object_ids.append(obj.id)
-
-        except BadZipfile as err:
-            self._save_gather_error(err.message, harvest_job)
-            return None
-        except ContentFetchError as err:
-            self._save_gather_error(err.message, harvest_job)
-            return None
-        except Exception as err:
-            error_template = 'Unable to get content for URL: %s: %s'
-            error = error_template % (harvest_job.source.url, str(err))
-            self._save_gather_error(error, harvest_job)
-            return None
-
-        if object_ids:
-            return object_ids
-        else:
-            self._save_gather_error('No packages received for URL: %s' % harvest_job.source.url,
-                                    harvest_job)
-            return None
 
 
 class GdiHarvester(JSONZipBaseHarvester):
@@ -281,11 +297,8 @@ class GdiHarvester(JSONZipBaseHarvester):
             package['tags'] = self.cleanse_tags(package['tags'])
             log.debug('Cleansed tags: %s', json.dumps(package['tags']))
 
-        # generate id based on OID namespace and package name, this makes sure,
-        # that packages with the same name get the same id
-        package['id'] = str(
-            uuid.uuid5(uuid.NAMESPACE_OID, str(package['name']))
-        )
+        package['id'] = self.generate_id_from_name(package['name'])
+
         package['extras']['metadata_original_portal'] = self.portal
         for resource in package['resources']:
             resource['format'] = resource['format'].lower()
@@ -296,7 +309,7 @@ class GdiHarvester(JSONZipBaseHarvester):
         self.amend_package(package)
 
         harvest_object.content = json.dumps(package)
-        super(JSONZipBaseHarvester, self).import_stage(harvest_object)
+        super(GdiHarvester, self).import_stage(harvest_object)
 
 
 class GenesisDestatisZipHarvester(JSONZipBaseHarvester):
@@ -323,12 +336,8 @@ class GenesisDestatisZipHarvester(JSONZipBaseHarvester):
             package['tags'] = self.cleanse_tags(package['tags'])
             log.debug('Cleansed tags: %s', json.dumps(package['tags']))
 
-        # generate id based on OID namespace and package name, this makes sure,
-        # that packages with the same name get the same id
+        package['id'] = self.generate_id_from_name(package['name'])
 
-        package['id'] = str(
-            uuid.uuid5(uuid.NAMESPACE_OID, str(package['name']))
-        )
         package['extras']['metadata_original_portal'] = self.portal
 
         for resource in package['resources']:
@@ -340,7 +349,7 @@ class GenesisDestatisZipHarvester(JSONZipBaseHarvester):
         self.amend_package(package)
 
         harvest_object.content = json.dumps(package)
-        super(JSONZipBaseHarvester, self).import_stage(harvest_object)
+        super(GenesisDestatisZipHarvester, self).import_stage(harvest_object)
 
 
 class RegionalstatistikZipHarvester(JSONZipBaseHarvester):
@@ -367,11 +376,8 @@ class RegionalstatistikZipHarvester(JSONZipBaseHarvester):
             package['tags'] = self.cleanse_tags(package['tags'])
             log.debug('Cleansed tags: %s', json.dumps(package['tags']))
 
-        # generate id based on OID namespace and package name, this makes sure,
-        # that packages with the same name get the same id
-        package['id'] = str(
-            uuid.uuid5(uuid.NAMESPACE_OID, str(package['name']))
-        )
+        package['id'] = self.generate_id_from_name(package['name'])
+
         package['extras']['metadata_original_portal'] = self.portal
         for resource in package['resources']:
             resource['format'] = resource['format'].lower()
@@ -380,7 +386,7 @@ class RegionalstatistikZipHarvester(JSONZipBaseHarvester):
         package = json.loads(harvest_object.content)
         self.amend_package(package)
         harvest_object.content = json.dumps(package)
-        super(JSONZipBaseHarvester, self).import_stage(harvest_object)
+        super(RegionalstatistikZipHarvester, self).import_stage(harvest_object)
 
 
 class DestatisZipHarvester(JSONZipBaseHarvester):
@@ -407,12 +413,8 @@ class DestatisZipHarvester(JSONZipBaseHarvester):
             package['tags'] = self.cleanse_tags(package['tags'])
             log.debug('Cleansed tags: %s', json.dumps(package['tags']))
 
-        # generate id based on OID namespace and package name, this makes sure,
-        # that packages with the same name get the same id
+        package['id'] = self.generate_id_from_name(package['name'])
 
-        package['id'] = str(
-            uuid.uuid5(uuid.NAMESPACE_OID, str(package['name']))
-        )
         package['extras']['metadata_original_portal'] = self.portal
 
         for resource in package['resources']:
@@ -424,7 +426,7 @@ class DestatisZipHarvester(JSONZipBaseHarvester):
         self.amend_package(package)
 
         harvest_object.content = json.dumps(package)
-        super(JSONZipBaseHarvester, self).import_stage(harvest_object)
+        super(DestatisZipHarvester, self).import_stage(harvest_object)
 
 
 class SachsenZipHarvester(JSONZipBaseHarvester):
@@ -451,11 +453,8 @@ class SachsenZipHarvester(JSONZipBaseHarvester):
             package['tags'] = self.cleanse_tags(package['tags'])
             log.debug('Cleansed tags: %s', json.dumps(package['tags']))
 
-        # generate id based on OID namespace and package name, this makes sure,
-        # that packages with the same name get the same id
-        package['id'] = str(
-            uuid.uuid5(uuid.NAMESPACE_OID, str(package['name']))
-        )
+        package['id'] = self.generate_id_from_name(package['name'])
+
         package['extras']['metadata_original_portal'] = self.portal
 
         # resource format to lower case
@@ -468,7 +467,7 @@ class SachsenZipHarvester(JSONZipBaseHarvester):
         self.amend_package(package)
 
         harvest_object.content = json.dumps(package)
-        super(JSONZipBaseHarvester, self).import_stage(harvest_object)
+        super(SachsenZipHarvester, self).import_stage(harvest_object)
 
 
 class BmbfZipHarvester(JSONDumpBaseCKANHarvester):
@@ -487,17 +486,6 @@ class BmbfZipHarvester(JSONDumpBaseCKANHarvester):
             'description': self.__doc__.split('\n')[0]
         }
 
-    def _set_config(self, config_str):
-        if config_str:
-            self.config = json.loads(config_str)
-        else:
-            self.config = {}
-        self.api_version = 1
-        self.config['api_version'] = 1
-        self.config['force_all'] = True
-        self.config['remote_groups'] = 'only_local'
-        self.config['user'] = 'bmbf-datenportal'
-
     def amend_package(self, package):
         '''
         Amends the package data
@@ -506,9 +494,8 @@ class BmbfZipHarvester(JSONDumpBaseCKANHarvester):
             package['tags'] = self.cleanse_tags(package['tags'])
             log.debug('Cleansed tags: %s', json.dumps(package['tags']))
 
-        package['id'] = str(uuid.uuid5(
-            uuid.NAMESPACE_OID, str(package['name'])
-        ))
+        package['id'] = self.generate_id_from_name(package['name'])
+
         package['extras']['metadata_original_portal'] = self.portal
 
         for resource in package['resources']:
@@ -547,11 +534,9 @@ class BfjHarvester(JSONZipBaseHarvester):
         if 'tags' in package:
             package['tags'] = self.cleanse_tags(package['tags'])
             log.debug('Cleansed tags: %s', json.dumps(package['tags']))
-        # generate id based on OID namespace and package name, this makes sure,
-        # that packages with the same name get the same id
-        package['id'] = str(
-            uuid.uuid5(uuid.NAMESPACE_OID, str(package['name']))
-        )
+
+        package['id'] = self.generate_id_from_name(package['name'])
+
         package['extras']['metadata_original_portal'] = self.portal
         for resource in package['resources']:
             resource['format'] = resource['format'].lower()
@@ -565,4 +550,4 @@ class BfjHarvester(JSONZipBaseHarvester):
         self.amend_package(package)
 
         harvest_object.content = json.dumps(package)
-        super(JSONZipBaseHarvester, self).import_stage(harvest_object)
+        super(BfjHarvester, self).import_stage(harvest_object)

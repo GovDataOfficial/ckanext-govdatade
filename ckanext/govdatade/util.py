@@ -1,10 +1,3 @@
-from ckanext.govdatade.validators import link_checker
-from ckanext.govdatade.validators import schema_checker
-from datetime import datetime
-from collections import defaultdict
-from math import ceil
-
-from ckanext.govdatade.config import config
 import json
 import logging
 import os
@@ -12,6 +5,14 @@ import ast
 import ckan.logic as logic
 import ckanapi
 import distutils.dir_util
+
+from ckanext.govdatade.validators import link_checker
+from ckanext.govdatade.validators import schema_checker
+from datetime import datetime
+from collections import defaultdict
+from math import ceil
+
+from ckanext.govdatade.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +76,9 @@ def normalize_action_dataset(dataset):
     extras = {}
     if 'extras' in dataset:
         for entry in dataset['extras']:
-            # TODO : parse string to int for fields of type number in the metadata json schema,
-            # e.g. temporal_granularity_factor
+            if entry['key'] == 'temporal_granularity_factor':
+                if entry['value'].isdigit():
+                    entry['value'] = int(entry['value'])
             extras[entry['key']] = entry['value']
 
     dataset['extras'] = normalize_extras(extras)
@@ -191,7 +193,7 @@ def generate_link_checker_data(data):
     try:
         num_metadata = ast.literal_eval(redis.get('general'))['num_datasets']
     except ValueError as err:
-        error_message = 'Error retriving number of datasets'
+        error_message = 'Error retrieving number of datasets'
         error_message = error_message + ' from Redis.'
         logger.error(error_message)
         raise err
@@ -240,24 +242,24 @@ def generate_schema_checker_data(data):
     try:
         num_metadata = ast.literal_eval(redis.get('general'))['num_datasets']
     except ValueError as err:
-        error_message = 'Error retriving number of datasets'
+        error_message = 'Error retrieving number of datasets'
         error_message = error_message + ' from Redis.'
         logger.error(error_message)
         raise err
 
-    if 'schema' not in data:
-        data['schema'] = {}
+    if validator.SCHEMA_RECORD_KEY not in data:
+        data[validator.SCHEMA_RECORD_KEY] = {}
 
     if 'schemachecker' not in data:
         data['schemachecker'] = {}
 
-    data['schema']['portal_statistic'] = defaultdict(int)
-    data['schema']['rule_statistic'] = defaultdict(int)
-    data['schema']['broken_rules'] = defaultdict(defaultdict)
+    data[validator.SCHEMA_RECORD_KEY]['portal_statistic'] = defaultdict(int)
+    data[validator.SCHEMA_RECORD_KEY]['rule_statistic'] = defaultdict(int)
+    data[validator.SCHEMA_RECORD_KEY]['broken_rules'] = defaultdict(defaultdict)
 
-    portals = data['schema']['portal_statistic']
-    rules = data['schema']['rule_statistic']
-    broken_rules = data['schema']['broken_rules']
+    portals = data[validator.SCHEMA_RECORD_KEY]['portal_statistic']
+    rules = data[validator.SCHEMA_RECORD_KEY]['rule_statistic']
+    broken_rules = data[validator.SCHEMA_RECORD_KEY]['broken_rules']
 
     broken = 0
 
@@ -309,7 +311,7 @@ def generate_general_data(data):
         data['num_datasets'] = ast.literal_eval(redis.get('general'))['num_datasets']
         data['timestamp'] = datetime.today().strftime("%Y-%m-%d um %H:%M")
     except ValueError as err:
-        error_message = 'Error retriving number of datasets'
+        error_message = 'Error retrieving number of datasets'
         error_message = error_message + ' from Redis.'
         logger.error(error_message)
         raise err

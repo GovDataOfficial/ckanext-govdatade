@@ -170,14 +170,20 @@ class LinkChecker(CkanCommand):
         for redis_id in redis_ids:
             if redis_id not in dataset_ids:
                 record = redis_client.get(redis_id)
-                if record is not None:
+                if (record is not None) and (redis_id != 'general'):
                     record = self.evaluate_record(record)
+                    info_message = None
                     if schema_checker.SchemaChecker.SCHEMA_RECORD_KEY not in record:
                         redis_client.delete(redis_id)
+                        info_message = 'Deleted deprecated dataset for dataset'
                     else:
-                        record.pop(validator.SCHEMA_RECORD_KEY, None)
+                        return_value = record.pop(validator.SCHEMA_RECORD_KEY, None)
+                        if return_value is not None:
+                            redis_client.set(redis_id, record)
+                            info_message = 'Deleted deprecated broken links information for dataset'
 
-                    self.logger.info('Deleted deprecated dataset %s from Redis', str(redis_id))
+                    if info_message is not None:
+                        self.logger.info(info_message + ' %s from Redis', str(redis_id))
 
     def evaluate_record(self, record):
         try:
