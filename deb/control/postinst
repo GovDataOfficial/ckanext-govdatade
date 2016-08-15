@@ -6,13 +6,8 @@ export XDG_CACHE_HOME=/tmp/
 # Activate python environment
 source /usr/lib/ckan/env/bin/activate
 
-# Install and update pip and pip tools
-pip install -U pip --no-index -f /usr/lib/ckanext-govdatade/requirements
-pip install -U setuptools --no-index -f /usr/lib/ckanext-govdatade/requirements
-pip install -U wheel --no-index -f /usr/lib/ckanext-govdatade/requirements
-
 # Install ckanext-govdatade and it's requirements
-pip install --no-index -f /usr/lib/ckanext-govdatade/requirements ckanext-govdatade
+/usr/lib/ckan/env/bin/pip install --no-index -f /usr/lib/ckanext-govdatade/requirements ckanext-govdatade
 
 # Create directory for reports
 mkdir -p /var/lib/ckan/static/reports

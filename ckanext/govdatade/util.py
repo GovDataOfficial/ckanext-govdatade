@@ -70,11 +70,13 @@ def normalize_action_dataset(dataset):
     Normalizes the given dataset
     '''
     dataset['groups'] = [group['name'] for group in dataset['groups']]
-    dataset['tags'] = [group['name'] for group in dataset['tags']]
+    dataset['tags'] = [tag['name'] for tag in dataset['tags']]
 
     extras = {}
     if 'extras' in dataset:
         for entry in dataset['extras']:
+            # TODO : parse string to int for fields of type number in the metadata json schema,
+            # e.g. temporal_granularity_factor
             extras[entry['key']] = entry['value']
 
     dataset['extras'] = normalize_extras(extras)
