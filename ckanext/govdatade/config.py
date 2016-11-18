@@ -6,7 +6,7 @@ import json
 import urllib2
 import pylons.config
 
-log = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class HarvesterConfig:

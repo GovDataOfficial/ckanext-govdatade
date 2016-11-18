@@ -10,7 +10,7 @@ The GovData.de harvester is based on the CKAN extension [ckanext-harvest](https:
 
 If you are using Python virtual environment (virtualenv), activate it.
 
-Install a specific version of the CKAN extension ckanext-harvest. It is tested that ckanext-govdatade is working well with the branch release-v2.0 of ckanext-harvest.
+Install a specific version of the CKAN extension ckanext-harvest. It is tested that ckanext-govdatade is working well with the release `v0.0.5` of ckanext-harvest.
 
 ```bash
 $ cd /path/to/virtualenv

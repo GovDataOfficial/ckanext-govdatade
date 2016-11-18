@@ -3,26 +3,38 @@
 
 import unittest
 
+from ckanext.govdatade.extras import Extras
 from ckanext.govdatade.harvesters.ckanharvester import DatahubCKANHarvester
-from ckanext.govdatade.config import config
 
 
 class DataHubIOHarvesterTest(unittest.TestCase):
 
     def test_amend_package(self):
         harvester = DatahubCKANHarvester()
-        package = {'name': 'Package Name',
-                   'description': '   ',
-                   'groups': ['bibliographic', 'lld', 'bibsoup'],
-                   'resources': [],
-                   'extras': {}
-                   }
+        portal = 'http://datahub.io/'
+        package = {
+            'name': 'Package Name',
+            'description': '   ',
+            'groups': [
+                {'name': 'bibliographic'},
+                {'name': 'lld'},
+                {'name': 'bibsoup'},
+            ],
+            'resources': [],
+            'extras': []
+        }
 
-        harvester.amend_package(package)
-        portal = package['extras']['metadata_original_portal']
-        self.assertEqual(portal, 'http://datahub.io/')
-        self.assertEqual(
-            package['groups'],
-            ['bibliographic', 'lld', 'bibsoup', 'bildung_wissenschaft']
+        valid = harvester.amend_package(package)
+
+        extras = Extras(package['extras'])
+
+        self.assertTrue(extras.key('metadata_original_portal'))
+        self.assertEquals(portal, extras.value('metadata_original_portal'))
+        self.assertTrue(valid)
+        self.assertListEqual(package['groups'],
+            [{'id': 'bibliographic', 'name': 'bibliographic'},
+             {'id': 'lld', 'name': 'lld'},
+             {'id': 'bibsoup', 'name': 'bibsoup'},
+             {'id': 'bildung_wissenschaft', 'name': 'bildung_wissenschaft'}]
         )
         self.assertEqual(package['type'], 'datensatz')

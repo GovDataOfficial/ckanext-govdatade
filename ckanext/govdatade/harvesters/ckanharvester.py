@@ -11,6 +11,7 @@ import logging
 import urllib2
 import re
 import uuid
+from codecs import BOM_UTF8
 import ckanapi
 
 from ckanext.harvest.harvesters.ckanharvester import CKANHarvester
@@ -18,6 +19,8 @@ from ckanext.harvest.harvesters.ckanharvester import ContentFetchError
 from ckanext.harvest.interfaces import IHarvester
 from ckanext.govdatade.harvesters.translator import translate_groups
 from ckanext.govdatade.config import config
+from ckanext.govdatade.extras import Extras
+from ckanext.govdatade.util import get_group_dict, remove_group_dict, fix_group_dict_list
 from simplejson.scanner import JSONDecodeError
 
 from ckan import model
@@ -25,13 +28,12 @@ from ckan import plugins as p
 from ckan.model import Session, PACKAGE_NAME_MAX_LENGTH
 from ckan.plugins.core import implements
 
-log = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 NAME_RANDOM_STRING_LENGTH = 5
 NAME_DELETED_SUFFIX = "-deleted"
 NAME_MAX_LENGTH = PACKAGE_NAME_MAX_LENGTH-NAME_RANDOM_STRING_LENGTH-len(NAME_DELETED_SUFFIX)
-DELETE_PACKAGES_LOGFILE_PATH_DEFAULT = '/var/log/ckan/auto_delete_deprecated_packages.csv'
 
 
 class GovDataHarvester(CKANHarvester):
@@ -41,8 +43,14 @@ class GovDataHarvester(CKANHarvester):
     implements(IHarvester)
 
     def __init__(self):
+        '''Initializes the general necessary params from config.'''
+
+        self.path_to_logfile = None
         schema_url = config.get('ckanext.govdata.urls.schema')
         groups_url = config.get('ckanext.govdata.urls.groups')
+        path_to_logfile = config.get(
+            'ckanext.govdata.delete_deprecated_packages.logfile'
+        )
 
         if schema_url is None:
             error_message = 'Missing configuration value for {config_key}'.format(
@@ -54,9 +62,63 @@ class GovDataHarvester(CKANHarvester):
                 config_key='ckanext.govdata.urls.groups'
             )
             raise ValueError(error_message)
+        if path_to_logfile is None:
+            LOGGER.error(
+                'Missing configuration value for %s',
+                'ckanext.govdata.delete_deprecated_packages.logfile'
+            )
+        else:
+            self.path_to_logfile = path_to_logfile
 
         self.schema = json.loads(urllib2.urlopen(schema_url).read())
         self.govdata_groups = json.loads(urllib2.urlopen(groups_url).read())
+
+    @classmethod
+    def _get_rest_api_offset(cls, api_version):
+        return '/api/%d/rest' % api_version
+
+    @classmethod
+    def lstrip_bom(cls, content, bom=BOM_UTF8):
+        '''
+        Strips the BOM if present
+        '''
+        if content.startswith(bom):
+            return content[len(bom):]
+        else:
+            return content
+
+    def amend_package(self, package):
+        if 'extras' not in package:
+            package['extras'] = []
+
+        if 'tags' in package:
+            package['tags'] = self.cleanse_tags(package['tags'])
+
+        self.lowercase_resources_formats(package)
+
+        if 'groups' in package:
+            fix_group_dict_list(package['groups'])
+
+        package.pop('relationships_as_subject', [])
+        package.pop('relationships_as_object', [])
+
+        self.set_portal(package)
+
+    @classmethod
+    def lowercase_resources_formats(cls, package_dict):
+        '''Lowercases the format values in resources.'''
+        for resource in package_dict['resources']:
+            resource['format'] = resource['format'].lower()
+
+    def set_portal(self, package_dict):
+        '''Set the portal into package extras.'''
+        extras = Extras(package_dict['extras'])
+        extras.update(
+            'metadata_original_portal',
+            self.portal,
+            True
+        )
+        package_dict['extras'] = extras.get()
 
     def _set_config(self, config_str):
         '''Enforce API version 1 for enabling group import.'''
@@ -76,7 +138,7 @@ class GovDataHarvester(CKANHarvester):
             config_settings=json.dumps(self.config)
         )
 
-        log.debug(config_settings_log_message)
+        LOGGER.debug(config_settings_log_message)
 
     @classmethod
     def assert_author_fields(cls, package_dict, author_alternative, author_email_alternative):
@@ -95,23 +157,43 @@ class GovDataHarvester(CKANHarvester):
             raise ValueError(value_error)
 
     @classmethod
-    def cleanse_tags(cls, tags):
-        '''Cleans a set of given tags.'''
+    def has_tag(cls, tags_dict_list, tag):
+        '''Checks if tag is present in tags dict list.'''
+        if isinstance(tags_dict_list, list):
+            for tags_dict in tags_dict_list:
+                if 'name' in tags_dict and tags_dict.get('name').strip() == tag.strip():
+                    return True
 
-        log.debug(
-            'Cleansing tags: %s.',
-            json.dumps(tags)
+        return False
+
+    @classmethod
+    def cleanse_tags(cls, tags_dict_list):
+        '''Cleans tags in given list of tags.'''
+
+        LOGGER.debug(
+            'Cleansing tags in list: %s.',
+            json.dumps(tags_dict_list)
         )
 
-        if isinstance(tags, list):
+        if isinstance(tags_dict_list, list):
             cleansed_tags = []
+            for tags_dict in tags_dict_list:
+                if 'name' in tags_dict:
+                    tag = tags_dict.get('name')
+                    tags_dict['name'] = cls.cleanse_special_characters(tag)
+                    cleansed_tags.append(tag)
 
-            for tag in tags:
-                cleansed_tags.append(cls.cleanse_special_characters(tag))
+            if len(cleansed_tags) > 0:
+                LOGGER.debug('Cleansed %d tags.', len(cleansed_tags))
+                LOGGER.debug('Cleansed list: %s', json.dumps(tags_dict_list))
 
-            return cleansed_tags
+            return tags_dict_list
 
-        return cls.cleanse_special_characters(tags)
+        cleansed_tag = cls.cleanse_special_characters(tags_dict_list)
+
+        LOGGER.debug('Cleansed tag: %s', json.dumps(cleansed_tag))
+
+        return cleansed_tag
 
     @classmethod
     def cleanse_special_characters(cls, tag):
@@ -121,6 +203,7 @@ class GovDataHarvester(CKANHarvester):
 
     @classmethod
     def build_context(cls):
+        '''Builds a context dictionary.'''
         return {
             'model': model,
             'session': Session,
@@ -138,7 +221,10 @@ class GovDataHarvester(CKANHarvester):
 
     @classmethod
     def create_new_name_for_deletion(cls, name):
-        '''Creates new name by adding suffix "-deleted" and random string to the given name'''
+        '''
+        Creates new name by adding suffix "-deleted" and
+        random string to the given name
+        '''
 
         random_suffix = str(uuid.uuid4())[:NAME_RANDOM_STRING_LENGTH]
         new_name = name[:NAME_MAX_LENGTH]
@@ -146,8 +232,12 @@ class GovDataHarvester(CKANHarvester):
 
     @classmethod
     def rename_datasets_before_delete(cls, deprecated_package_dicts):
-        '''Renames the given packages to avoid name conflicts with deleted packages.'''
+        '''
+        Renames the given packages to avoid name conflicts with
+        deleted packages.
+        '''
 
+        renamed_package_ids = []
         package_update = p.toolkit.get_action('package_update')
         for package_dict in deprecated_package_dicts:
             context = cls.build_context()
@@ -157,41 +247,51 @@ class GovDataHarvester(CKANHarvester):
             # Update package
             try:
                 package_update(context, package_dict)
+                renamed_package_ids.append(package_id)
             except Exception as exception:
-                log.error("Unable updating package %s: %s", package_id, exception)
+                LOGGER.error("Unable updating package %s: %s", package_id, exception)
 
-    @classmethod
-    def log_deleted_packages_in_file(cls, deprecated_package_dicts, time_in_seconds):
+        return renamed_package_ids
+
+    def log_deleted_packages_in_file(self, deprecated_package_dicts, time_in_seconds):
         '''Write the information about the deleted packages in a file.'''
 
-        path_to_logfile = config.get('ckanext.govdata.delete_deprecated_packages.logfile',
-                                     DELETE_PACKAGES_LOGFILE_PATH_DEFAULT)
-        if path_to_logfile:
-            log.debug("Logging to file %s.", path_to_logfile)
-            with open(path_to_logfile, 'a') as logfile:
-                for package_dict in deprecated_package_dicts:
-                    line = ([package_dict['id'], package_dict['name'], 'deleted',
-                             cls.format_date_string(time_in_seconds)])
-                    csv.writer(logfile).writerow(line)
-        else:
-            log.error("Could not get log file path from configuration!")
+        if self.path_to_logfile is not None:
+            LOGGER.debug("Logging to file %s.", self.path_to_logfile)
+            try:
+                with open(self.path_to_logfile, 'a') as logfile:
+                    for package_dict in deprecated_package_dicts:
+                        line = ([package_dict['id'], package_dict['name'], 'deleted',
+                                 self.format_date_string(time_in_seconds)])
+                        csv.writer(logfile).writerow(line)
+            except Exception as exception:
+                LOGGER.warn(
+                    'Could not write in automated deletion log file at %s: %s',
+                    self.path_to_logfile,
+                    exception
+                )
 
     @classmethod
     def delete_packages(cls, package_ids):
         '''Deletes the packages belonging to the given package ids.'''
 
+        deleted_package_ids = []
         package_delete = p.toolkit.get_action('package_delete')
         for to_delete_id in package_ids:
             context = cls.build_context()
             try:
                 package_delete(context, {'id': to_delete_id})
+                deleted_package_ids.append(to_delete_id)
             except Exception as exception:
-                log.error("Unable deleting package with id %s: %s", package_id, exception)
+                LOGGER.error(
+                    "Unable to delete package with id %s: %s",
+                    to_delete_id,
+                    exception
+                )
+        return deleted_package_ids
 
     def delete_deprecated_datasets(self, remote_dataset_ids, harvest_job):
-        '''
-        Deletes deprecated datasets
-        '''
+        '''Deletes deprecated datasets.'''
 
         starttime = time.time()
         # load harvester configuration
@@ -199,65 +299,109 @@ class GovDataHarvester(CKANHarvester):
         harvester_package = p.toolkit.get_action('package_show')(context, {'id': harvest_job.source_id})
         # Local harvest source organization
         organization_id = harvester_package.get('owner_org')
-        log.info("delete_deprecated_datasets: Started at %s. Org-ID: %s. Portal: %s.",
-                 self.format_date_string(starttime), str(organization_id), str(self.portal))
+        LOGGER.info(
+            "delete_deprecated_datasets: Started at %s. Org-ID: %s. Portal: %s.",
+            self.format_date_string(starttime),
+            str(organization_id),
+            str(self.portal)
+        )
 
-        # check if the information about the source portal is present
-        if self.portal:
-            # get all datasets of this organization step by step
-            local_dataset_ids = []
-            deprecated_ids_total = []
-            offset = 0
-            count = 0
-            rows = 500
-            package_search = p.toolkit.get_action('package_search')
-            while offset <= count:
-                query_object = {
-                    "fq": '+owner_org:"' + organization_id + '" +metadata_original_portal:"' + self.portal
-                          + '" -type:"harvest"',
-                    "rows": rows,
-                    "start": offset
-                    }
-                result = package_search({}, query_object)
-                datasets = result["results"]
-                count += len(datasets)
-                log.debug("offset: %s, count: %s", str(offset), str(count))
-                offset += rows
+        deleted_package_ids = []
+        if remote_dataset_ids:
+            # check if the information about the source portal is present
+            if self.portal:
+                # get all datasets of this organization step by step
+                local_dataset_ids = []
+                deprecated_package_dicts_total = []
+                offset = 0
+                count = 0
+                rows = 500
+                package_search = p.toolkit.get_action('package_search')
 
-                if count != 0:
-                    local_dataset_ids_sub = [x["id"] for x in datasets]
-                    local_dataset_ids.extend(local_dataset_ids_sub)
-                    deprecated_ids = set(local_dataset_ids_sub) - set(remote_dataset_ids)
-                    log.debug('Found %s deprecated datasets.', len(deprecated_ids))
-                    if deprecated_ids:
-                        deprecated_ids_total.extend(deprecated_ids)
-                        checkpoint_start = time.time()
-                        # Rename datasets before deleting, because of possible name conflicts
-                        deprecated_package_dicts = [x for x in datasets if x['id'] in deprecated_ids]
-                        self.rename_datasets_before_delete(deprecated_package_dicts)
-                        checkpoint_end = time.time()
-                        log.debug("Time taken for renaming %s datasets: %s.",
-                                  len(deprecated_ids), str(checkpoint_end-checkpoint_start))
+                rename_log_message = 'Time taken for renaming %s datasets: %s.'
+                delete_log_message = 'Deleted %s deprecated datasets. Time taken for deletion: %s.'
 
-                        # delete deprecated datasets
-                        checkpoint_start = time.time()
-                        self.delete_packages(deprecated_ids)
-                        checkpoint_end = time.time()
-                        log.debug("Deleted %s deprecated datasets. Time taken for deletion: %s.",
-                                  len(deprecated_ids), str(checkpoint_end-checkpoint_start))
-                        # Logging id, name and time to file system
-                        deprecated_package_dicts = [x for x in datasets if x['id'] in deprecated_ids]
-                        self.log_deleted_packages_in_file(deprecated_package_dicts, checkpoint_end)
+                while offset <= count:
+                    query_object = {
+                        "fq": '+owner_org:"' + organization_id + '" +metadata_original_portal:"' + self.portal
+                              + '" -type:"harvest"',
+                        "rows": rows,
+                        "start": offset
+                        }
+                    result = package_search({}, query_object)
+                    datasets = result["results"]
+                    count += len(datasets)
+                    LOGGER.debug("offset: %s, count: %s", str(offset), str(count))
+                    offset += rows
 
-            log.debug("Local datasets: %s, remote datasets: %s", len(local_dataset_ids),
-                      len(remote_dataset_ids))
+                    if count != 0:
+                        local_dataset_ids_sub = [x["id"] for x in datasets]
+                        local_dataset_ids.extend(local_dataset_ids_sub)
+                        deprecated_ids = set(local_dataset_ids_sub) - set(remote_dataset_ids)
+                        for x in datasets:
+                            if x['id'] in deprecated_ids:
+                                deprecated_package_dicts_total.append(self.get_min_package_dict(x))
+
+                if len(deprecated_package_dicts_total) > 0:
+                    LOGGER.debug('Found %s deprecated datasets.', len(deprecated_package_dicts_total))
+                    checkpoint_start = time.time()
+                    # Rename datasets before deleting, because of possible name conflicts
+                    renamed_package_ids = self.rename_datasets_before_delete(deprecated_package_dicts_total)
+                    checkpoint_end = time.time()
+                    LOGGER.debug(
+                        rename_log_message,
+                        len(renamed_package_ids),
+                        str(checkpoint_end - checkpoint_start)
+                    )
+                    # delete deprecated datasets
+                    checkpoint_start = time.time()
+                    deleted_package_ids = self.delete_packages(renamed_package_ids)
+                    checkpoint_end = time.time()
+                    LOGGER.debug(
+                        delete_log_message,
+                        len(deleted_package_ids),
+                        str(checkpoint_end - checkpoint_start)
+                    )
+                    # Logging id, name and time to file system
+                    deleted_package_dicts = [
+                        x for x in deprecated_package_dicts_total if x['id'] in deleted_package_ids]
+                    self.log_deleted_packages_in_file(deleted_package_dicts, checkpoint_end)
+
+                LOGGER.debug(
+                    "Local datasets: %s, remote datasets: %s",
+                    len(local_dataset_ids),
+                    len(remote_dataset_ids)
+                )
+            else:
+                log_message = 'Could not get information about the source portal for harvester %s.'
+                log_message += ' -> SKIPPING deletion of deprecated datasets!'
+                LOGGER.warn(log_message, harvester_package['name'])
+
         else:
-            log.warn("Could not get information about the source portal for harvester %s."
-                     " -> SKIPPING deletion of deprecated datasets!", harvester_package['name'])
+            log_message = 'The list of remote dataset ids is not set or empty for harvester %s.'
+            log_message += ' -> SKIPPING deletion of deprecated datasets!'
+            LOGGER.warn(log_message, harvester_package['name'])
 
         endtime = time.time()
-        log.info("delete_deprecated_datasets: Finished at %s. Deleted %s deprecated datasets. Duration: %s",
-                 self.format_date_string(endtime), len(deprecated_ids_total), str(endtime-starttime))
+        log_message = 'delete_deprecated_datasets: Finished at %s. '
+        log_message += 'Deleted %s deprecated datasets. Duration: %s.'
+        LOGGER.info(
+            log_message,
+            self.format_date_string(endtime),
+            len(deleted_package_ids),
+            str(endtime - starttime)
+        )
+
+    @classmethod
+    def get_min_package_dict(cls, package_dict):
+        if package_dict:
+            result = {
+                      'id': package_dict['id'],
+                      'name': package_dict['name'],
+                      'metadata_modified': package_dict['metadata_modified']}
+            return result
+        else:
+            return
 
     @classmethod
     def compare_metadata_modified(cls, remote_md_modified, local_md_modified):
@@ -268,13 +412,13 @@ class GovDataHarvester(CKANHarvester):
         remote_dt = datetime.datetime.strptime(remote_md_modified, dt_format)
         local_dt = datetime.datetime.strptime(local_md_modified, dt_format)
         if remote_dt < local_dt:
-            log.debug('remote dataset precedes local dataset -> skipping.')
+            LOGGER.debug('remote dataset precedes local dataset -> skipping.')
             return False
         elif remote_dt == local_dt:
-            log.debug('remote dataset equals local dataset -> skipping.')
+            LOGGER.debug('remote dataset equals local dataset -> skipping.')
             return False
         else:
-            log.debug('local dataset precedes remote dataset -> importing.')
+            LOGGER.debug('local dataset precedes remote dataset -> importing.')
             # TODO do I have to delete other dataset?
             return True
 
@@ -285,82 +429,92 @@ class GovDataHarvester(CKANHarvester):
             config.get('ckanext.govdata.harvester.ckan.api.base.url')
         )
         remote_dataset = json.loads(remote_dataset)
-        remote_dataset_extras = remote_dataset['extras']
-        if 'metadata_original_id' in remote_dataset_extras:
-            orig_id = remote_dataset_extras['metadata_original_id']
+        remote_dataset_extras = Extras(remote_dataset['extras'])
+
+        has_orig_id = remote_dataset_extras.key('metadata_original_id')
+
+        if has_orig_id:
+            orig_id = remote_dataset_extras.value('metadata_original_id')
             try:
                 local_search_result = registry.action.package_search(
                     q='metadata_original_id:"' + orig_id + '"')
                 if local_search_result['count'] == 0:
-                    log.debug(
+                    LOGGER.debug(
                         'Did not find this original id. Import accepted.')
                     return True
                 if local_search_result['count'] == 1:
-                    log.debug('Found duplicate entry')
+                    LOGGER.debug('Found duplicate entry')
                     local_dataset = local_search_result['results'][0]
-                    local_dataset_extras = local_dataset['extras']
-                    if 'metadata_transformer' in [entry['key'] for entry in local_dataset_extras]:
-                        log.debug('Found metadata_transformer')
+                    local_dataset_extras = Extras(local_dataset['extras'])
+
+                    if local_dataset_extras.key('metadata_transformer'):
+                        LOGGER.debug('Found metadata_transformer')
                         local_transformer = None
                         local_portal = None
-                        for entry in local_dataset_extras:
-                            if entry['key'] == 'metadata_transformer':
-                                value = entry['value']
-                                local_transformer = value.lstrip(
-                                    '"').rstrip('"')
-                                log.debug('Found local metadata transformer')
-                            if entry['key'] == 'metadata_original_portal':
-                                tmp_value = entry['value']
-                                local_portal = tmp_value.lstrip(
-                                    '"').rstrip('"')
-                        if 'metadata_transformer' in remote_dataset_extras:
-                            remote_transformer = remote_dataset_extras[
-                                'metadata_transformer']
+
+                        if local_dataset_extras.key('metadata_transformer'):
+                            LOGGER.debug('Found local metadata_transformer')
+                            transformer = local_dataset_extras.value('metadata_transformer')
+                            transformer.lstrip('"').rstrip('"')
+                            local_transformer = transformer
+
+                        if local_dataset_extras.key('metadata_original_portal'):
+                            LOGGER.debug('Found local metadata_original_portal')
+                            portal = local_dataset_extras.value('metadata_original_portal')
+                            portal.lstrip('"').rstrip('"')
+                            local_portal = portal
+
+                        if remote_dataset_extras.key('metadata_transformer'):
+                            remote_transformer = remote_dataset_extras.value('metadata_transformer')
                             if remote_transformer == local_transformer or remote_transformer == 'harvester':
                                 # TODO this is temporary for gdi-de
                                 if local_portal == 'http://www.statistik.sachsen.de/':
-                                    log.debug('Found sachsen, accept import.')
+                                    LOGGER.debug('Found sachsen, accept import.')
                                     return True
-                                log.debug(
+                                LOGGER.debug(
                                     'Remote metadata transformer equals local transformer -> check metadata_modified')
                                 # TODO check md_modified
                                 if 'metadata_modified' in remote_dataset:
-                                    return self.compare_metadata_modified(remote_dataset['metadata_modified'],
-                                                                          local_dataset['metadata_modified'])
+                                    return self.compare_metadata_modified(
+                                        remote_dataset['metadata_modified'],
+                                        local_dataset['metadata_modified']
+                                    )
                                 else:
-                                    log.debug(
+                                    LOGGER.debug(
                                         'Remote metadata transformer equals local transformer, but remote dataset does not contain metadata_modified -> skipping')
                                     return False
                             elif remote_transformer == 'author' and local_transformer == 'harvester':
-                                log.debug(
+                                LOGGER.debug(
                                     'Remote metadata transformer equals author and local equals harvester -> importing.')
                                 return True
                             else:
-                                log.debug(
+                                LOGGER.debug(
                                     'unknown value for remote metadata_transformer -> skipping.')
                                 return False
                         else:
-                            log.debug(
+                            LOGGER.debug(
                                 'remote does not contain metadata_transformer, fallback on metadata_modified')
                             if 'metadata_modified' in remote_dataset:
                                 return self.compare_metadata_modified(remote_dataset['metadata_modified'],
                                                                       local_dataset['metadata_modified'])
                             else:
-                                log.debug(
+                                LOGGER.debug(
                                     'Remote metadata transformer equals local transformer, but remote dataset does not contain metadata_modified -> skipping')
                                 return False
                     else:
                         if 'metadata_modified' in remote_dataset:
-                            return self.compare_metadata_modified(remote_dataset['metadata_modified'],
-                                                                  local_dataset['metadata_modified'])
+                            return self.compare_metadata_modified(
+                                remote_dataset['metadata_modified'],
+                                local_dataset['metadata_modified']
+                            )
                         else:
-                            log.debug(
+                            LOGGER.debug(
                                 'Found duplicate entry but remote dataset does not contain metadata_modified -> skipping.')
                             return False
             except Exception as exception:
-                log.error(exception)
+                LOGGER.error(exception)
         else:
-            log.debug('no metadata_original_id. Importing accepted.')
+            LOGGER.debug('no metadata_original_id. Importing accepted.')
             return True
 
     def gather_stage(self, harvest_job):
@@ -370,14 +524,10 @@ class GovDataHarvester(CKANHarvester):
             self._set_config(harvest_job.source.config)
 
             base_url = harvest_job.source.url.rstrip('/')
-            # save current api version
-            api_version_original = self.api_version
-            self.api_version = 2 # api version 2 is getting ids instead of names
-            base_rest_url = base_url + self._get_rest_api_offset()
-            # revert api version
-            self.api_version = api_version_original
+            # api version 2 is getting ids instead of names
+            base_rest_url = base_url + self._get_rest_api_offset(2)
             url = base_rest_url + '/package'
-            log.debug("gather_stage: package_url = " + url)
+            LOGGER.debug("gather_stage: package_url = " + url)
 
             content = self._get_content(url)
             package_ids = json.loads(content)
@@ -409,8 +559,9 @@ class RostockCKANHarvester(GovDataHarvester):
     implements(IHarvester)
 
     def __init__(self, name='rostock_harvester'):
+        GovDataHarvester.__init__(self)
         url_dict = config.get_harvester_urls(name)
-        log.debug('url_dict: %s', json.dumps(url_dict))
+        LOGGER.debug('url_dict: %s', json.dumps(url_dict))
         self.portal = url_dict['portal_url']
 
     def info(self):
@@ -424,22 +575,17 @@ class RostockCKANHarvester(GovDataHarvester):
         '''
         Amends the package data
         '''
-        if 'tags' in package:
-            package['tags'] = self.cleanse_tags(package['tags'])
-            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+        GovDataHarvester.amend_package(self, package)
 
-        package['extras']['metadata_original_portal'] = self.portal
         package['name'] = package['name'] + '-hro'
-        for resource in package['resources']:
-            resource['format'] = resource['format'].lower()
 
     def import_stage(self, harvest_object):
-        package = json.loads(harvest_object.content)
         try:
+            package = json.loads(harvest_object.content)
             self.amend_package(package)
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
-            log.error('Rostock: ' + str(error))
+            LOGGER.error('Rostock: ' + str(error))
             return
 
         harvest_object.content = json.dumps(package)
@@ -450,11 +596,13 @@ class HamburgCKANHarvester(GovDataHarvester):
 
     '''A CKAN harvester for Hamburg solving data compatibility problems.'''
 
+
     implements(IHarvester)
 
     def __init__(self, name='hamburg_harvester'):
+        GovDataHarvester.__init__(self)
         url_dict = config.get_harvester_urls(name)
-        log.debug('url_dict: %s', json.dumps(url_dict))
+        LOGGER.debug('url_dict: %s', json.dumps(url_dict))
         self.portal = url_dict['portal_url']
 
     def info(self):
@@ -468,20 +616,21 @@ class HamburgCKANHarvester(GovDataHarvester):
         '''
         Amends the package data
         '''
-        if 'tags' in package:
-            package['tags'] = self.cleanse_tags(package['tags'])
-            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+        GovDataHarvester.amend_package(self, package)
 
-        extras = package['extras']
+        extras = Extras(package['extras'])
 
-        is_latest_version = extras.get('latestVersion', None)
+        is_latest_version = None
+        if extras.key('latestVersion'):
+            is_latest_version = extras.value('latestVersion')
 
         if is_latest_version == 'true':
-            log.debug(
+            LOGGER.debug(
                 'received latestVersion == true. Continue with this dataset')
 
-            remote_metadata_original_id = extras.get(
-                'metadata_original_id', None)
+            remote_metadata_original_id = extras.value(
+                'metadata_original_id'
+            )
             # FIXME : Replace Remote CKAN api call with CKAN internal get_action
             registry = ckanapi.RemoteCKAN(
                 config.get('ckanext.govdata.harvester.ckan.api.base.url')
@@ -491,58 +640,50 @@ class HamburgCKANHarvester(GovDataHarvester):
             )
 
             if local_search_result['count'] == 0:
-                log.debug(
+                LOGGER.debug(
                     'Did not find this metadata original id. Import accepted.')
             elif local_search_result['count'] == 1:
-                log.debug(
+                LOGGER.debug(
                     'Found local dataset for particular metadata_original_id')
                 local_dataset_from_action_api = local_search_result[
                     'results'][0]
 
                 # copy name and id from local dataset to remote dataset
-                log.debug('Copy id and name to remote dataset')
-                log.debug(package['id'])
-                log.debug(package['name'])
+                LOGGER.debug('Copy id and name to remote dataset')
+                LOGGER.debug(package['id'])
+                LOGGER.debug(package['name'])
                 package['id'] = local_dataset_from_action_api['id']
                 package['name'] = local_dataset_from_action_api['name']
-                log.debug(package['id'])
-                log.debug(package['name'])
+                LOGGER.debug(package['id'])
+                LOGGER.debug(package['name'])
             else:
 
-                log_message = 'Found more than one local dataset for particular '
-                log_message = log_message + 'metadata_original_id. Offending '
-                log_message = log_message + 'metadata_original_id is:'
-                log.debug(log_message)
-                log.debug(remote_metadata_original_id)
+                log_message = 'Found more than one local dataset for '
+                log_message = log_message + 'particular metadata_original_id. '
+                log_message = log_message + 'Offending metadata_original_id '
+                log_message = log_message + 'is:'
+                LOGGER.debug(log_message)
+                LOGGER.debug(remote_metadata_original_id)
         elif is_latest_version == 'false':
             # do not import or update this particular remote dataset
-            log.debug('received latestVersion == false. Skip this dataset')
+            LOGGER.debug('received latestVersion == false. Skip this dataset')
             return False
 
         # check if import is desired
-        if package['type'] == 'document':
-            # check if tag 'govdata' exists
-            if not [tag for tag in package['tags'] if tag.lower() == 'govdata']:
-                log.debug('Found invalid package')
+        if package['type'] == 'document' or package['type'] == 'dokument':
+            if not self.has_tag(package['tags'], 'govdata'):
+                LOGGER.debug("Found invalid package with 'govdata' tag")
                 return False
             package['type'] = 'dokument'
-        # check if import is desired
-        elif package['type'] == 'dokument':
-            # check if tag 'govdata' exists
-            if not [tag for tag in package['tags'] if tag.lower() == 'govdata']:
-                log.debug('Found invalid package')
-                return False
         elif package['type'] == 'dataset':
             package['type'] = 'datensatz'
 
         # fix groups
-        log.debug('Before: ')
-        log.debug(package['groups'])
+        LOGGER.debug('Before: ')
+        LOGGER.debug(package['groups'])
         package['groups'] = translate_groups(package['groups'], 'hamburg')
-        log.debug('After: ')
-        log.debug(package['groups'])
-
-        extras['metadata_original_portal'] = self.portal
+        LOGGER.debug('After: ')
+        LOGGER.debug(package['groups'])
 
         self.assert_author_fields(
             package,
@@ -552,41 +693,15 @@ class HamburgCKANHarvester(GovDataHarvester):
 
         return True
 
-    def fetch_stage(self, harvest_object):
-        log.debug('In CKANHarvester fetch_stage')
-
-        self._set_config(harvest_object.job.source.config)
-
-        # Get source URL
-        url = harvest_object.source.url.rstrip('/')
-        url = url + self._get_rest_api_offset() + '/package/' + \
-            harvest_object.guid
-
-        # Get contents
-        try:
-            content = self._get_content(url)
-        except Exception, error:
-            self._save_object_error('Unable to get content for package: %s: %r' %
-                                    (url, error), harvest_object)
-            log.debug('Going to sleep for 45s')
-            time.sleep(45)
-            log.debug('Wake up from sleep')
-            return None
-
-        # Save the fetched contents in the harvest object
-        harvest_object.content = content
-        harvest_object.save()
-        return True
-
     def import_stage(self, harvest_object):
-        package = json.loads(harvest_object.content)
         try:
+            package = json.loads(harvest_object.content)
             valid = self.amend_package(package)
             if not valid:
                 return  # drop package
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
-            log.error('Hamburg: ' + str(error))
+            LOGGER.error('Hamburg: ' + str(error))
             return
         harvest_object.content = json.dumps(package)
         super(HamburgCKANHarvester, self).import_stage(harvest_object)
@@ -599,8 +714,9 @@ class BerlinCKANHarvester(GovDataHarvester):
     implements(IHarvester)
 
     def __init__(self, name='berlin_harvester'):
+        GovDataHarvester.__init__(self)
         url_dict = config.get_harvester_urls(name)
-        log.debug('url_dict: %s', json.dumps(url_dict))
+        LOGGER.debug('url_dict: %s', json.dumps(url_dict))
         self.portal = url_dict['portal_url']
 
     def info(self):
@@ -614,27 +730,27 @@ class BerlinCKANHarvester(GovDataHarvester):
         '''
         Amends the package data
         '''
-        if 'tags' in package:
-            package['tags'] = self.cleanse_tags(package['tags'])
-            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
-
-        extras = package['extras']
+        GovDataHarvester.amend_package(self, package)
 
         if 'license_id' not in package or package['license_id'] == '':
             package['license_id'] = 'notspecified'
 
-        # if sector is not set, set it to 'oeffentlich' (default)
-        if not extras.get('sector'):
-            extras['sector'] = 'oeffentlich'
+        extras = Extras(package['extras'])
 
-        if package['extras']['sector'] != 'oeffentlich':
+        # if sector is not set, set it to 'oeffentlich' (default)
+        if not extras.key('sector', disallow_empty=True):
+            extras.update('sector', 'oeffentlich', True)
+
+        if extras.value('sector') != 'oeffentlich':
             return False
 
         # avoid ValidationError when extra dict
         # key 'type' is also used by the internal CKAN validation,
         # see GOVDATA-651
-        if 'type' in extras:
-            package['extras'].pop('type', None)
+        if extras.key('type'):
+            extras.remove('type')
+
+        package['extras'] = extras.get()
 
         valid_types = ['datensatz', 'dokument', 'app']
         if not package.get('type') or package['type'] not in valid_types:
@@ -642,17 +758,20 @@ class BerlinCKANHarvester(GovDataHarvester):
 
         package['groups'] = translate_groups(package['groups'], 'berlin')
 
-        extras['metadata_original_portal'] = self.portal
-        for resource in package['resources']:
-            resource['format'] = resource['format'].lower()
         return True
 
     def import_stage(self, harvest_object):
-        package = json.loads(harvest_object.content)
-        valid = self.amend_package(package)
+        try:
+            package = json.loads(harvest_object.content)
+            valid = self.amend_package(package)
 
-        if not valid:
-            return  # drop package
+            if not valid:
+                return  # drop package
+
+        except ValueError, error:
+            self._save_object_error(str(error), harvest_object)
+            LOGGER.error('Berlin: ' + str(error))
+            return
 
         harvest_object.content = json.dumps(package)
         super(BerlinCKANHarvester, self).import_stage(harvest_object)
@@ -672,28 +791,9 @@ class RlpCKANHarvester(GovDataHarvester):
         }
 
     def __init__(self, name='rlp_harvester'):
-        schema_url = config.get('ckanext.govdata.urls.schema')
-        groups_url = config.get('ckanext.govdata.urls.groups')
-
-        if schema_url is None:
-            error_message = 'Missing configuration value for {config_key}'.format(
-                config_key='ckanext.govdata.urls.schema'
-            )
-            raise ValueError(error_message)
-        if groups_url is None:
-            error_message = 'Missing configuration value for {config_key}'.format(
-                config_key='ckanext.govdata.urls.groups'
-            )
-            raise ValueError(error_message)
-
-        log.debug('schema_url: ' + schema_url)
-        log.debug('groups_url: ' + groups_url)
-
-        self.schema = json.loads(urllib2.urlopen(schema_url).read())
-        self.govdata_groups = json.loads(urllib2.urlopen(groups_url).read())
-
+        GovDataHarvester.__init__(self)
         url_dict = config.get_harvester_urls(name)
-        log.debug('url_dict: %s', json.dumps(url_dict))
+        LOGGER.debug('url_dict: %s', json.dumps(url_dict))
         self.portal = url_dict['portal_url']
 
     @classmethod
@@ -711,17 +811,14 @@ class RlpCKANHarvester(GovDataHarvester):
         '''
         Amends the package data
         '''
-        if 'tags' in package:
-            package['tags'] = self.cleanse_tags(package['tags'])
-            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+        GovDataHarvester.amend_package(self, package)
+
+        extras = Extras(package['extras'])
 
         # manually set package type
         package['type'] = 'datensatz'
         if all([resource['format'].lower() == 'pdf' for resource in package['resources']]):
             package['type'] = 'dokument'
-
-        for resource in package['resources']:
-            resource['format'] = resource['format'].lower()
 
         if self.has_possible_contact_fields(package):
             self.assert_author_fields(
@@ -730,22 +827,25 @@ class RlpCKANHarvester(GovDataHarvester):
                 package['point_of_contact_address']['email']
             )
 
-        package['extras']['metadata_original_portal'] = self.portal
-        package['extras']['sector'] = 'oeffentlich'
+        extras.update('sector', 'oeffentlich', True)
 
         # the extra fields are present as CKAN core fields in the remote
         # instance: copy all content from these fields into the extras field
-        for extra_field in self.schema['properties']['extras']['properties'].keys():
+        extra_fields = self.schema['properties']['extras']['properties'].keys()
+        for extra_field in extra_fields:
             if extra_field in package:
-                package['extras'][extra_field] = package[extra_field]
+                extras.update(
+                    extra_field,
+                    package[extra_field],
+                    True
+                )
                 del package[extra_field]
 
         # convert license cc-by-nc to cc-nc
-        if package['extras']['terms_of_use']['license_id'] == 'cc-by-nc':
-            package['extras']['terms_of_use']['license_id'] = 'cc-nc'
+        if package['license_id'] == 'cc-by-nc':
+            package['license_id'] = 'cc-nc'
 
-        package['license_id'] = package[
-            'extras']['terms_of_use']['license_id']
+        package['extras'] = extras.get()
 
         # GDI related patch
         if 'gdi-rp' in package['groups']:
@@ -753,29 +853,24 @@ class RlpCKANHarvester(GovDataHarvester):
 
         # map these two group names to schema group names
         if 'justiz' in package['groups']:
-            package['groups'].append('gesetze_justiz')
-            package['groups'].remove('justiz')
+            package['groups'].append(get_group_dict('gesetze_justiz'))
+            package['groups'] = remove_group_dict(package['groups'], 'justiz')
 
         if 'transport' in package['groups']:
-            package['groups'].append('transport_verkehr')
-            package['groups'].remove('transport')
+            package['groups'].append(get_group_dict('transport_verkehr'))
+            package['groups'] = remove_group_dict(package['groups'], 'transport')
 
         # filter illegal group names
         package['groups'] = [
-            group for group in package['groups'] if group in self.govdata_groups]
+            group for group in package['groups'] if group['name'] in self.govdata_groups]
 
     def import_stage(self, harvest_object):
-        package = json.loads(harvest_object.content)
-
-        dataset = package['extras']['content_type'].lower() == 'datensatz'
-        if not dataset and 'gdi-rp' not in package['groups']:
-            return  # skip all non-datasets for the time being
-
         try:
+            package = json.loads(harvest_object.content)
             self.amend_package(package)
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
-            log.exception(error)
+            LOGGER.error('Rlp: ' + str(error))
             return
 
         harvest_object.content = json.dumps(package)
@@ -796,8 +891,9 @@ class DatahubCKANHarvester(GovDataHarvester):
     ]
 
     def __init__(self, name='datahub_harvester'):
+        GovDataHarvester.__init__(self)
         url_dict = config.get_harvester_urls(name)
-        log.debug('url_dict: %s', json.dumps(url_dict))
+        LOGGER.debug('url_dict: %s', json.dumps(url_dict))
         self.portal = url_dict['portal_url']
 
     def info(self):
@@ -807,51 +903,28 @@ class DatahubCKANHarvester(GovDataHarvester):
             'description': self.__doc__.split('\n')[0]
         }
 
-    def fetch_stage(self, harvest_object):
-        log.debug('In CKANHarvester fetch_stage')
-        self._set_config(harvest_object.job.source.config)
-
-        if harvest_object.guid not in self.valid_packages:
-            return None
-
-        # Get source URL
-        url = harvest_object.source.url.rstrip('/')
-        url = url + self._get_rest_api_offset() + '/package/'
-        url = url + harvest_object.guid
-
-        # Get contents
-        try:
-            content = self._get_content(url)
-        except Exception, error:
-            self._save_object_error('Unable to get content for package:'
-                                    '%s: %r' % (url, error), harvest_object)
-            log.exception(error)
-            return None
-
-        # Save the fetched contents in the harvest object
-        harvest_object.content = content
-        harvest_object.save()
-        return True
-
     def amend_package(self, package):
         '''
         Amends the package data
         '''
-        if 'tags' in package:
-            package['tags'] = self.cleanse_tags(package['tags'])
-            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+        GovDataHarvester.amend_package(self, package)
 
         package['type'] = 'datensatz'
+        package['groups'].append(get_group_dict('bildung_wissenschaft'))
 
-        for resource in package['resources']:
-            resource['format'] = resource['format'].lower()
-
-        package['extras']['metadata_original_portal'] = self.portal
-        package['groups'].append('bildung_wissenschaft')
+        return True
 
     def import_stage(self, harvest_object):
-        package = json.loads(harvest_object.content)
-        self.amend_package(package)
+        try:
+            package = json.loads(harvest_object.content)
+            if package['name'] not in self.valid_packages:
+                LOGGER.info('Datahub: Package %s is not within whitelist, skipping...', package['name'])
+                return False
+            self.amend_package(package)
+        except ValueError, error:
+            self._save_object_error(str(error), harvest_object)
+            LOGGER.error('Datahub: ' + str(error))
+            return False
 
         harvest_object.content = json.dumps(package)
         super(DatahubCKANHarvester, self).import_stage(harvest_object)
@@ -862,8 +935,9 @@ class OpenNrwCKANHarvester(GovDataHarvester):
     '''A CKAN Harvester for OpenNRW'''
 
     def __init__(self, name='opennrw_harvester'):
+        GovDataHarvester.__init__(self)
         url_dict = config.get_harvester_urls(name)
-        log.debug('url_dict: %s', json.dumps(url_dict))
+        LOGGER.debug('url_dict: %s', json.dumps(url_dict))
         self.portal = url_dict['portal_url']
 
     def info(self):
@@ -877,19 +951,21 @@ class OpenNrwCKANHarvester(GovDataHarvester):
         '''
         Amends the package data
         '''
-        if 'tags' in package:
-            package['tags'] = self.cleanse_tags(package['tags'])
-            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+        GovDataHarvester.amend_package(self, package)
 
-        for resource in package['resources']:
-            resource['format'] = resource['format'].lower()
+        extras = Extras(package['extras'])
+        extras.update('metadata_transformer', '', True)
 
-        package['extras']['metadata_original_portal'] = self.portal
-        package['extras']['metadata_transformer'] = ''
+        package['extras'] = extras.get()
 
     def import_stage(self, harvest_object):
-        package = json.loads(harvest_object.content)
-        self.amend_package(package)
+        try:
+            package = json.loads(harvest_object.content)
+            self.amend_package(package)
+        except ValueError, error:
+            self._save_object_error(str(error), harvest_object)
+            LOGGER.error('OpenNrw: ' + str(error))
+            return
 
         harvest_object.content = json.dumps(package)
         super(OpenNrwCKANHarvester, self).import_stage(harvest_object)

@@ -10,23 +10,30 @@ import StringIO
 import uuid
 import zipfile
 
-from urlparse import urlparse
-from codecs import BOM_UTF8
-
 from ckanext.harvest.model import HarvestObject
 from ckanext.govdatade.config import config
+from ckanext.govdatade.extras import Extras
+from ckanext.govdatade.util import normalize_api_dataset
 from ckanext.govdatade.harvesters.translator import translate_groups
 from ckanext.govdatade.harvesters.ckanharvester import GovDataHarvester
 from ckanext.harvest.harvesters.ckanharvester import ContentFetchError
 
-log = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class JSONDumpBaseCKANHarvester(GovDataHarvester):
 
     '''A base CKAN harvester for CKAN instances returning JSON dump files.'''
 
+    def __init__(self):
+        '''Initializes the general necessary params from config.'''
+
+        GovDataHarvester.__init__(self)
+
     def info(self):
+        '''
+        Returns a self describing dictionary.
+        '''
         return {
             'name': 'json-base',
             'title': 'Base JSON dump harvester',
@@ -35,8 +42,8 @@ class JSONDumpBaseCKANHarvester(GovDataHarvester):
 
     def generate_id_from_name(self, package_name):
         '''
-        Generates the id based on OID namespace and package name, this makes sure,
-        that packages with the same name get the same id
+        Generates the id based on OID namespace and package name,
+        this ensures that packages with the same name get the same id.
         '''
         return str(uuid.uuid5(uuid.NAMESPACE_OID, str(package_name)))
 
@@ -45,8 +52,11 @@ class JSONDumpBaseCKANHarvester(GovDataHarvester):
         Wrapper for deleting deprecated packages.
         '''
 
-        remote_dataset_ids = [self.generate_id_from_name(x["name"]) for x in packages]
-        super(JSONDumpBaseCKANHarvester, self).delete_deprecated_datasets(remote_dataset_ids, harvest_job)
+        remote_dataset_ids = [self.generate_id_from_name(x['name']) for x in packages]
+        super(JSONDumpBaseCKANHarvester, self).delete_deprecated_datasets(
+            remote_dataset_ids,
+            harvest_job
+        )
 
     def gather_stage(self, harvest_job):
         super(JSONDumpBaseCKANHarvester, self)._set_config(
@@ -58,7 +68,7 @@ class JSONDumpBaseCKANHarvester(GovDataHarvester):
         except ContentFetchError as err:
             self._save_gather_error(err.message, harvest_job)
             return None
-        except Exception, err:
+        except Exception as err:
             error_template = 'Unable to get content for URL: %s: %s'
             error = error_template % (harvest_job.source.url, str(err))
             self._save_gather_error(error, harvest_job)
@@ -67,7 +77,9 @@ class JSONDumpBaseCKANHarvester(GovDataHarvester):
         object_ids = []
 
         packages = json.loads(content)
+
         for package in packages:
+            normalize_api_dataset(package)
             obj = HarvestObject(guid=package['name'], job=harvest_job)
             obj.content = json.dumps(package)
             obj.save()
@@ -78,8 +90,10 @@ class JSONDumpBaseCKANHarvester(GovDataHarvester):
             self.delete_deprecated_datasets(packages, harvest_job)
             return object_ids
         else:
-            self._save_gather_error('No packages received for URL: %s' % harvest_job.source.url,
-                                    harvest_job)
+            self._save_gather_error(
+                'No packages received for URL: %s' % harvest_job.source.url,
+                harvest_job
+            )
             return None
 
     def fetch_stage(self, harvest_object):
@@ -94,6 +108,11 @@ class JSONZipBaseHarvester(JSONDumpBaseCKANHarvester):
 
     '''A base CKAN harvester for CKAN instances returning zipped JSON dump files.'''
 
+    def __init__(self):
+        '''Initializes the general necessary params from config.'''
+
+        JSONDumpBaseCKANHarvester.__init__(self)
+
     def info(self):
         return {
             'name': 'json-zip-base',
@@ -101,34 +120,26 @@ class JSONZipBaseHarvester(JSONDumpBaseCKANHarvester):
             'description': self.__doc__.split('\n')[0]
         }
 
-    @classmethod
-    def lstrip_bom(cls, content, bom=BOM_UTF8):
-        '''
-        Strips the BOM if present
-        '''
-        if content.startswith(bom):
-            return content[len(bom):]
-        else:
-            return content
-
     def _get_content(self, url):
         http_request = urllib2.Request(url=url)
-        # Set User-agent to a different value, because the BFJ-Harvester endpoint do not accept
-        # the default urllib2 User-agent.
+        '''
+        Set User-agent to a different value, because the BFJ-Harvester endpoint
+        does not accept the default urllib2 User-agent.
+        '''
         http_request.add_header('User-agent', 'govdata-harvester')
 
         try:
             http_response = urllib2.urlopen(http_request)
-            log.debug('http headers: ' + str(http_request.header_items()))
-        except urllib2.HTTPError, e:
-            if e.getcode() == 404:
-                raise ContentNotFoundError('HTTP error: %s' % e.code)
+            LOGGER.debug('http headers: ' + str(http_request.header_items()))
+        except urllib2.HTTPError as error:
+            if error.getcode() == 404:
+                raise ContentNotFoundError('HTTP error: %s' % error.code)
             else:
-                raise ContentFetchError('HTTP error: %s' % e.code)
-        except urllib2.URLError, e:
-            raise ContentFetchError('URL error: %s' % e.reason)
-        except httplib.HTTPException, e:
-            raise ContentFetchError('HTTP Exception: %s' % e)
+                raise ContentFetchError('HTTP error: %s' % error.code)
+        except urllib2.URLError as error:
+            raise ContentFetchError('URL error: %s' % error.reason)
+        except httplib.HTTPException as error:
+            raise ContentFetchError('HTTP Exception: %s' % error)
         return http_response.read()
 
     def gather_stage(self, harvest_job, encoding=None):
@@ -136,7 +147,7 @@ class JSONZipBaseHarvester(JSONDumpBaseCKANHarvester):
         # Request all remote packages
         try:
             content = self._get_content(harvest_job.source.url)
-            log.debug('Grabbing zip file: %s', harvest_job.source.url)
+            LOGGER.debug('Grabbing zip file: %s', harvest_job.source.url)
 
             object_ids = []
             packages = []
@@ -150,7 +161,9 @@ class JSONZipBaseHarvester(JSONDumpBaseCKANHarvester):
                         archive_content = archive_content.decode(encoding)
                     else:
                         archive_content = self.lstrip_bom(archive_content)
+
                     package = json.loads(archive_content)
+                    normalize_api_dataset(package)
                     packages.append(package)
                     obj = HarvestObject(guid=package['name'], job=harvest_job)
                     obj.content = json.dumps(package)
@@ -171,11 +184,18 @@ class JSONZipBaseHarvester(JSONDumpBaseCKANHarvester):
 
         if object_ids:
             # delete obsolete packages
-            super(JSONZipBaseHarvester, self).delete_deprecated_datasets(packages, harvest_job)
+            super(JSONZipBaseHarvester, self).delete_deprecated_datasets(
+                packages,
+                harvest_job
+            )
+
             return object_ids
         else:
-            self._save_gather_error('No packages received for URL: %s' % harvest_job.source.url,
-                                    harvest_job)
+            self._save_gather_error(
+                'No packages received for URL: %s' % harvest_job.source.url,
+                harvest_job
+            )
+
             return None
 
 
@@ -184,8 +204,9 @@ class BremenCKANHarvester(JSONDumpBaseCKANHarvester):
     '''A CKAN harvester for Bremen solving data compatibility problems.'''
 
     def __init__(self, name='bremen_harvester'):
+        JSONDumpBaseCKANHarvester.__init__(self)
         url_dict = config.get_harvester_urls(name)
-        log.debug('url_dict: %s', json.dumps(url_dict))
+        LOGGER.debug('url_dict: %s', json.dumps(url_dict))
         self.portal = url_dict['portal_url']
 
     def info(self):
@@ -204,11 +225,9 @@ class BremenCKANHarvester(JSONDumpBaseCKANHarvester):
         - copy veroeffentlichende_stelle to maintainer
         - set spatial text
         '''
-        if 'tags' in package:
-            package['tags'] = self.cleanse_tags(package['tags'])
-            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+        GovDataHarvester.amend_package(self, package)
 
-        package['extras']['metadata_original_portal'] = self.portal
+        package['id'] = self.generate_id_from_name(package['name'])
 
         # set correct groups
         if not package['groups']:
@@ -217,60 +236,75 @@ class BremenCKANHarvester(JSONDumpBaseCKANHarvester):
         groups_before_log_message = 'groups before translate: {groups}'.format(
             groups=json.dumps(package['groups'])
         )
-        log.debug(groups_before_log_message)
+        LOGGER.debug(groups_before_log_message)
 
         package['groups'] = translate_groups(package['groups'], 'bremen')
 
         groups_after_log_message = 'groups after translate: {groups}'.format(
             groups=json.dumps(package['groups'])
         )
-        log.debug(groups_after_log_message)
+        LOGGER.debug(groups_after_log_message)
 
         # copy veroeffentlichende_stelle to maintainer
-        if 'contacts' in package['extras']:
+        extras = Extras(package['extras'])
+
+        if extras.key('contacts'):
+            contacts_dict = json.loads(extras.value('contacts'))
             quelle = filter(
                 lambda x: x['role'] == 'veroeffentlichende_stelle',
-                package['extras']['contacts']
+                contacts_dict
             )
             if quelle:
                 package['maintainer'] = quelle[0]['name']
                 package['maintainer_email'] = quelle[0]['email']
             else:
-                log.info('Unable to resolve maintainer details')
+                LOGGER.info('Unable to resolve maintainer details')
 
         # fix typos in terms of use
-        if 'terms_of_use' in package['extras']:
-            self.fix_terms_of_use(package['extras']['terms_of_use'])
-            package['license_id'] = package['extras'][
-                'terms_of_use']['license_id']
-        else:
-            package['license_id'] = u'notspecified'
+        package['license_id'] = u'notspecified'
 
-        if 'spatial-text' not in package['extras']:
-            package['extras']['spatial-text'] = 'Bremen 04 0 11 000'
+        if extras.key('terms_of_use'):
+            self.fix_terms_of_use(extras)
+            terms_of_use_dict = json.loads(extras.value('terms_of_use'))
+            package['license_id'] = terms_of_use_dict['license_id']
 
-        package['id'] = self.generate_id_from_name(package['name'])
+        if not extras.key('spatial-text'):
+            extras.update('spatial-text', 'Bremen 04 0 11 000', True)
 
-        for resource in package['resources']:
-            resource['format'] = resource['format'].lower()
+        package['extras'] = extras.get()
 
     def import_stage(self, harvest_object):
-        package = json.loads(harvest_object.content)
-
-        self.amend_package(package)
+        try:
+            package = json.loads(harvest_object.content)
+            self.amend_package(package)
+        except ValueError, error:
+            self._save_object_error(str(error), harvest_object)
+            LOGGER.error('Bremen: ' + str(error))
+            return
 
         harvest_object.content = json.dumps(package)
         super(BremenCKANHarvester, self).import_stage(harvest_object)
 
     @classmethod
-    def fix_terms_of_use(cls, terms_of_use):
+    def fix_terms_of_use(cls, extras):
         '''
-        Fixes the data structure for terms of use
+        Fixes the data structure for terms of use.
         '''
-        terms_of_use['license_id'] = terms_of_use['licence_id']
-        del terms_of_use['licence_id']
-        terms_of_use['license_url'] = terms_of_use['licence_url']
-        del terms_of_use['licence_url']
+        if extras.key('terms_of_use'):
+            terms_of_use = json.loads(extras.value('terms_of_use'))
+
+            if 'licence_id' in terms_of_use:
+                terms_of_use['license_id'] = terms_of_use['licence_id']
+                del terms_of_use['licence_id']
+            if 'licence_url' in terms_of_use:
+                terms_of_use['license_url'] = terms_of_use['licence_url']
+                del terms_of_use['licence_url']
+
+            extras.update(
+                'terms_of_use',
+                json.dumps(terms_of_use),
+                True
+            )
 
 
 class GdiHarvester(JSONZipBaseHarvester):
@@ -278,8 +312,9 @@ class GdiHarvester(JSONZipBaseHarvester):
     '''A CKAN harvester for Geodateninfrastruktur Deutschland solving data compatibility problems.'''
 
     def __init__(self, name='gdi_harvester'):
+        JSONZipBaseHarvester.__init__(self)
         url_dict = config.get_harvester_urls(name)
-        log.debug('url_dict: %s', json.dumps(url_dict))
+        LOGGER.debug('url_dict: %s', json.dumps(url_dict))
         self.portal = url_dict['portal_url']
 
     def info(self):
@@ -293,20 +328,18 @@ class GdiHarvester(JSONZipBaseHarvester):
         '''
         Amends the package data
         '''
-        if 'tags' in package:
-            package['tags'] = self.cleanse_tags(package['tags'])
-            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+        GovDataHarvester.amend_package(self, package)
 
         package['id'] = self.generate_id_from_name(package['name'])
 
-        package['extras']['metadata_original_portal'] = self.portal
-        for resource in package['resources']:
-            resource['format'] = resource['format'].lower()
-
     def import_stage(self, harvest_object):
-        package = json.loads(harvest_object.content)
-
-        self.amend_package(package)
+        try:
+            package = json.loads(harvest_object.content)
+            self.amend_package(package)
+        except ValueError, error:
+            self._save_object_error(str(error), harvest_object)
+            LOGGER.error('Gdi: ' + str(error))
+            return
 
         harvest_object.content = json.dumps(package)
         super(GdiHarvester, self).import_stage(harvest_object)
@@ -317,8 +350,9 @@ class GenesisDestatisZipHarvester(JSONZipBaseHarvester):
     '''A CKAN harvester for Genesis Destatis solving data compatibility problems.'''
 
     def __init__(self, name='genesis_destatis_harvester'):
+        JSONZipBaseHarvester.__init__(self)
         url_dict = config.get_harvester_urls(name)
-        log.debug('url_dict: %s', json.dumps(url_dict))
+        LOGGER.debug('url_dict: %s', json.dumps(url_dict))
         self.portal = url_dict['portal_url']
 
     def info(self):
@@ -332,21 +366,18 @@ class GenesisDestatisZipHarvester(JSONZipBaseHarvester):
         '''
         Amends the package data
         '''
-        if 'tags' in package:
-            package['tags'] = self.cleanse_tags(package['tags'])
-            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+        GovDataHarvester.amend_package(self, package)
 
         package['id'] = self.generate_id_from_name(package['name'])
 
-        package['extras']['metadata_original_portal'] = self.portal
-
-        for resource in package['resources']:
-            resource['format'] = resource['format'].lower()
-
     def import_stage(self, harvest_object):
-        package = json.loads(harvest_object.content)
-
-        self.amend_package(package)
+        try:
+            package = json.loads(harvest_object.content)
+            self.amend_package(package)
+        except ValueError, error:
+            self._save_object_error(str(error), harvest_object)
+            LOGGER.error('GenesisDestatis: ' + str(error))
+            return
 
         harvest_object.content = json.dumps(package)
         super(GenesisDestatisZipHarvester, self).import_stage(harvest_object)
@@ -357,8 +388,9 @@ class RegionalstatistikZipHarvester(JSONZipBaseHarvester):
     '''A CKAN harvester for Regionalstatistik solving data compatibility problems.'''
 
     def __init__(self, name='regionalstatistik_harvester'):
+        JSONZipBaseHarvester.__init__(self)
         url_dict = config.get_harvester_urls(name)
-        log.debug('url_dict: %s', json.dumps(url_dict))
+        LOGGER.debug('url_dict: %s', json.dumps(url_dict))
         self.portal = url_dict['portal_url']
 
     def info(self):
@@ -372,19 +404,19 @@ class RegionalstatistikZipHarvester(JSONZipBaseHarvester):
         '''
         Amends the package data
         '''
-        if 'tags' in package:
-            package['tags'] = self.cleanse_tags(package['tags'])
-            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+        GovDataHarvester.amend_package(self, package)
 
         package['id'] = self.generate_id_from_name(package['name'])
 
-        package['extras']['metadata_original_portal'] = self.portal
-        for resource in package['resources']:
-            resource['format'] = resource['format'].lower()
-
     def import_stage(self, harvest_object):
-        package = json.loads(harvest_object.content)
-        self.amend_package(package)
+        try:
+            package = json.loads(harvest_object.content)
+            self.amend_package(package)
+        except ValueError, error:
+            self._save_object_error(str(error), harvest_object)
+            LOGGER.error('Regionalstatistik: ' + str(error))
+            return
+
         harvest_object.content = json.dumps(package)
         super(RegionalstatistikZipHarvester, self).import_stage(harvest_object)
 
@@ -394,8 +426,9 @@ class DestatisZipHarvester(JSONZipBaseHarvester):
     '''A CKAN harvester for Destatis solving data compatibility problems.'''
 
     def __init__(self, name='destatis_harvester'):
+        JSONZipBaseHarvester.__init__(self)
         url_dict = config.get_harvester_urls(name)
-        log.debug('url_dict: %s', json.dumps(url_dict))
+        LOGGER.debug('url_dict: %s', json.dumps(url_dict))
         self.portal = url_dict['portal_url']
 
     def info(self):
@@ -409,21 +442,18 @@ class DestatisZipHarvester(JSONZipBaseHarvester):
         '''
         Amends the package data
         '''
-        if 'tags' in package:
-            package['tags'] = self.cleanse_tags(package['tags'])
-            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+        GovDataHarvester.amend_package(self, package)
 
         package['id'] = self.generate_id_from_name(package['name'])
 
-        package['extras']['metadata_original_portal'] = self.portal
-
-        for resource in package['resources']:
-            resource['format'] = resource['format'].lower()
-
     def import_stage(self, harvest_object):
-        package = json.loads(harvest_object.content)
-
-        self.amend_package(package)
+        try:
+            package = json.loads(harvest_object.content)
+            self.amend_package(package)
+        except ValueError, error:
+            self._save_object_error(str(error), harvest_object)
+            LOGGER.error('DestatisZip: ' + str(error))
+            return
 
         harvest_object.content = json.dumps(package)
         super(DestatisZipHarvester, self).import_stage(harvest_object)
@@ -434,8 +464,9 @@ class SachsenZipHarvester(JSONZipBaseHarvester):
     '''A CKAN harvester for Sachsen solving data compatibility problems.'''
 
     def __init__(self, name='sachsen_harvester'):
+        JSONZipBaseHarvester.__init__(self)
         url_dict = config.get_harvester_urls(name)
-        log.debug('url_dict: %s', json.dumps(url_dict))
+        LOGGER.debug('url_dict: %s', json.dumps(url_dict))
         self.portal = url_dict['portal_url']
 
     def info(self):
@@ -449,22 +480,18 @@ class SachsenZipHarvester(JSONZipBaseHarvester):
         '''
         Amends the package data
         '''
-        if 'tags' in package:
-            package['tags'] = self.cleanse_tags(package['tags'])
-            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+        GovDataHarvester.amend_package(self, package)
 
         package['id'] = self.generate_id_from_name(package['name'])
 
-        package['extras']['metadata_original_portal'] = self.portal
-
-        # resource format to lower case
-        for resource in package['resources']:
-            resource['format'] = resource['format'].lower()
-
     def import_stage(self, harvest_object):
-        package = json.loads(harvest_object.content)
-
-        self.amend_package(package)
+        try:
+            package = json.loads(harvest_object.content)
+            self.amend_package(package)
+        except ValueError, error:
+            self._save_object_error(str(error), harvest_object)
+            LOGGER.error('SachsenZip: ' + str(error))
+            return
 
         harvest_object.content = json.dumps(package)
         super(SachsenZipHarvester, self).import_stage(harvest_object)
@@ -475,14 +502,16 @@ class BmbfZipHarvester(JSONDumpBaseCKANHarvester):
     '''A CKAN harvester for BMBF solving data compatibility problems.'''
 
     def __init__(self, name='bmbf_harvester'):
+        JSONDumpBaseCKANHarvester.__init__(self)
         url_dict = config.get_harvester_urls(name)
-        log.debug('url_dict: %s', json.dumps(url_dict))
+        LOGGER.debug('url_dict: %s', json.dumps(url_dict))
         self.portal = url_dict['portal_url']
 
     def info(self):
+        title = u'Datenportal Bundesministerium für Bildung und Forschung'
         return {
             'name': 'bmbf',
-            'title': u'Datenportal Bundesministerium für Bildung und Forschung',
+            'title': title,
             'description': self.__doc__.split('\n')[0]
         }
 
@@ -490,22 +519,18 @@ class BmbfZipHarvester(JSONDumpBaseCKANHarvester):
         '''
         Amends the package data
         '''
-        if 'tags' in package:
-            package['tags'] = self.cleanse_tags(package['tags'])
-            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+        GovDataHarvester.amend_package(self, package)
 
         package['id'] = self.generate_id_from_name(package['name'])
 
-        package['extras']['metadata_original_portal'] = self.portal
-
-        for resource in package['resources']:
-            resource['format'] = resource['format'].lower()
-
     def import_stage(self, harvest_object):
-
-        package = json.loads(harvest_object.content)
-
-        self.amend_package(package)
+        try:
+            package = json.loads(harvest_object.content)
+            self.amend_package(package)
+        except ValueError, error:
+            self._save_object_error(str(error), harvest_object)
+            LOGGER.error('BmbfZip: ' + str(error))
+            return
 
         harvest_object.content = json.dumps(package)
         super(BmbfZipHarvester, self).import_stage(harvest_object)
@@ -516,8 +541,9 @@ class BfjHarvester(JSONZipBaseHarvester):
     '''A CKAN harvester for BfJ solving data compatibility problems.'''
 
     def __init__(self, name='bfj_harvester'):
+        JSONZipBaseHarvester.__init__(self)
         url_dict = config.get_harvester_urls(name)
-        log.debug('url_dict: %s', json.dumps(url_dict))
+        LOGGER.debug('url_dict: %s', json.dumps(url_dict))
         self.portal = url_dict['portal_url']
 
     def info(self):
@@ -531,23 +557,21 @@ class BfjHarvester(JSONZipBaseHarvester):
         '''
         Amends the package data
         '''
-        if 'tags' in package:
-            package['tags'] = self.cleanse_tags(package['tags'])
-            log.debug('Cleansed tags: %s', json.dumps(package['tags']))
+        GovDataHarvester.amend_package(self, package)
 
         package['id'] = self.generate_id_from_name(package['name'])
-
-        package['extras']['metadata_original_portal'] = self.portal
-        for resource in package['resources']:
-            resource['format'] = resource['format'].lower()
 
     def gather_stage(self, harvest_job):
         return super(BfjHarvester, self).gather_stage(harvest_job, 'latin9')
 
     def import_stage(self, harvest_object):
-        package = json.loads(harvest_object.content)
-
-        self.amend_package(package)
+        try:
+            package = json.loads(harvest_object.content)
+            self.amend_package(package)
+        except ValueError, error:
+            self._save_object_error(str(error), harvest_object)
+            LOGGER.error('Bfj: ' + str(error))
+            return
 
         harvest_object.content = json.dumps(package)
         super(BfjHarvester, self).import_stage(harvest_object)

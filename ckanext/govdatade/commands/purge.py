@@ -4,6 +4,7 @@
 Paster command for purging datasets.
 '''
 import csv
+import logging
 import sys
 import time
 
@@ -20,6 +21,7 @@ class Purge(CkanCommand):
 
     def __init__(self, name):
         super(Purge, self).__init__(name)
+        self.logger = logging.getLogger('ckanext.govdatade.reports')
 
     def command(self):
         super(Purge, self)._load_config()
@@ -86,10 +88,16 @@ class Purge(CkanCommand):
         '''Write the information about the deleted packages in a file.'''
 
         if self.path_to_logfile is not None:
-            with open(self.path_to_logfile, 'a') as logfile:
-                line = ([package_object.id, package_object.name, 'purged',
-                         self.format_date_string(time_in_seconds)])
-                csv.writer(logfile).writerow(line)
+            try:
+                with open(self.path_to_logfile, 'a') as logfile:
+                    line = ([package_object.id, package_object.name, 'purged',
+                             self.format_date_string(time_in_seconds)])
+                    csv.writer(logfile).writerow(line)
+            except Exception as exception:
+                self.logger.warn(
+                    'Could not write in automated deletion log file at %s: %s',
+                    self.path_to_logfile, exception
+                )
 
     @classmethod
     def format_date_string(cls, time_in_seconds):

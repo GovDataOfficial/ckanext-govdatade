@@ -17,7 +17,7 @@ from ckan.logic import NotFound
 
 from ckanext.govdatade.config import config
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class GroupAdder(CkanCommand):

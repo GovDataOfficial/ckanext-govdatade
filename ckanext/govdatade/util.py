@@ -14,7 +14,7 @@ from math import ceil
 
 from ckanext.govdatade.config import config
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 def iterate_remote_datasets(endpoint, max_rows=1000):
@@ -23,7 +23,7 @@ def iterate_remote_datasets(endpoint, max_rows=1000):
     '''
     ckan_api_client = ckanapi.RemoteCKAN(endpoint)
 
-    logger.info('Retrieve total number of datasets')
+    LOGGER.info('Retrieve total number of datasets')
 
     total = ckan_api_client.action.package_search(rows=1)['count']
 
@@ -40,7 +40,7 @@ def iterate_remote_datasets(endpoint, max_rows=1000):
             min=min_range,
             max=max_range
         )
-        logger.info(info_message)
+        LOGGER.info(info_message)
 
         records = ckan_api_client.action.package_search(
             rows=rows,
@@ -64,6 +64,37 @@ def iterate_local_datasets(context):
             yield dataset
         except logic.NotFound:
             print dataset_name
+
+
+def normalize_api_dataset(dataset):
+    '''
+    Normalizes the given API version 1 dataset
+    to a API version 3 dataset.
+    '''
+    if 'groups' in dataset:
+        groups = []
+
+        for group in dataset['groups']:
+            groups.append({'id': group, 'name': group})
+
+        dataset['groups'] = groups
+
+    if 'tags' in dataset:
+        tags = []
+        for tag in dataset['tags']:
+            tags.append({'name': tag})
+
+        dataset['tags'] = tags
+
+    if 'extras' in dataset and isinstance(dataset['extras'], dict):
+        extras = []
+        for key, value in dataset['extras'].iteritems():
+            value_string = value
+            if not isinstance(value, basestring):
+                value_string = json.dumps(value)
+            extras.append({'key': key, 'value': value_string})
+
+        dataset['extras'] = extras
 
 
 def normalize_action_dataset(dataset):
@@ -99,6 +130,42 @@ def normalize_extras(source):
         return normalize_extras(json.loads(source))
     else:
         return source
+
+def get_group_dict(group_name):
+    '''
+    Creates a group dict with the given name and returns this.
+    '''
+    group_dict = {}
+    if group_name:
+        group_dict = {'id': group_name, 'name': group_name}
+
+    return group_dict
+
+
+def remove_group_dict(group_dict_list, group_name):
+    '''
+    Removes group dict objects with the given name from the given group dict list
+    and returns the group dict list without the group dicts with the given name.
+    '''
+    result = []
+    for group_dict in group_dict_list:
+        if 'name' not in group_dict:
+            result.append(group_dict)
+        elif group_dict['name'] != group_name:
+            result.append(group_dict)
+
+    return result
+
+
+def fix_group_dict_list(group_dict_list):
+    '''
+    Fixes group dict objects by setting id to the name of the group, because ckanext-harvest is using
+    id to resolve local groups.
+    '''
+    for group_dict in group_dict_list:
+        if 'name' in group_dict:
+            # Set id to name, because ckanext-harvest is using id to resolve local groups
+            group_dict['id'] = group_dict['name']
 
 
 def copy_report_vendor_files():
@@ -187,7 +254,7 @@ def generate_link_checker_data(data):
         error_message = "Redis key '{redis_key}' not set".format(
             redis_key='general'
         )
-        logger.error(error_message)
+        LOGGER.error(error_message)
         raise LookupError(error_message)
 
     try:
@@ -195,7 +262,7 @@ def generate_link_checker_data(data):
     except ValueError as err:
         error_message = 'Error retrieving number of datasets'
         error_message = error_message + ' from Redis.'
-        logger.error(error_message)
+        LOGGER.error(error_message)
         raise err
 
     data['linkchecker'] = {}
@@ -220,7 +287,7 @@ def generate_link_checker_data(data):
     lc_stats['broken'] = sum(data['portals'].values())
     lc_stats['working'] = num_metadata - lc_stats['broken']
 
-    logger.info('Link checker data: %s', data)
+    LOGGER.info('Link checker data: %s', data)
 
 
 def generate_schema_checker_data(data):
@@ -236,7 +303,7 @@ def generate_schema_checker_data(data):
         error_message = "Redis key '{redis_key}' not set".format(
             redis_key='general'
         )
-        logger.error(error_message)
+        LOGGER.error(error_message)
         raise LookupError(error_message)
 
     try:
@@ -244,7 +311,7 @@ def generate_schema_checker_data(data):
     except ValueError as err:
         error_message = 'Error retrieving number of datasets'
         error_message = error_message + ' from Redis.'
-        logger.error(error_message)
+        LOGGER.error(error_message)
         raise err
 
     if validator.SCHEMA_RECORD_KEY not in data:
@@ -288,7 +355,7 @@ def generate_schema_checker_data(data):
     sc_stats['broken'] = broken
     sc_stats['working'] = num_metadata - sc_stats['broken']
 
-    logger.info('Schema checker data: %s', data)
+    LOGGER.info('Schema checker data: %s', data)
 
 
 def generate_general_data(data):
@@ -304,7 +371,7 @@ def generate_general_data(data):
         error_message = "Redis key '{redis_key}' not set".format(
             redis_key='general'
         )
-        logger.error(error_message)
+        LOGGER.error(error_message)
         raise LookupError(error_message)
 
     try:
@@ -313,7 +380,7 @@ def generate_general_data(data):
     except ValueError as err:
         error_message = 'Error retrieving number of datasets'
         error_message = error_message + ' from Redis.'
-        logger.error(error_message)
+        LOGGER.error(error_message)
         raise err
 
 

@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 import sys, os
 
-VERSION = '2.4.3'
+VERSION = '2.4.4'
 
 with open('base-requirements.txt') as f:
     required = [line.strip() for line in f]
@@ -14,9 +14,9 @@ setup(
   """,
   classifiers=[],  # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
   keywords='',
-  author='Fraunhofer FOKUS',
-  author_email='ogdd-harvesting@fokus.fraunhofer.de',
-  url='https://github.com/fraunhoferfokus/ckanext-govdatade',
+  author='SEITENBAU GmbH',
+  author_email='info@seitenbau.com',
+  url='https://github.com/GovDataOfficial/ckanext-govdatade',
   license='AGPL',
   packages=find_packages(exclude=['ez_setup', 'examples', 'tests']),
   exclude_package_data = {'': ['.gitignore', '.travis.yml', '.gitattributes', 'bin/*']},

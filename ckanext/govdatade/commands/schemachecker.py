@@ -16,6 +16,7 @@ from ckan.lib.cli import CkanCommand
 from ckan.logic import get_action
 from ckan.logic.schema import default_resource_schema
 
+from ckanext.govdatade.extras import Extras
 from ckanext.govdatade.util import normalize_action_dataset
 from ckanext.govdatade.util import iterate_local_datasets
 from ckanext.govdatade.util import generate_schema_checker_data
@@ -107,7 +108,8 @@ class SchemaChecker(CkanCommand):
         normalize_action_dataset(dataset)
 
         identifier = dataset['id']
-        portal = dataset['extras'].get('metadata_original_portal', 'null')
+        extras = Extras(dataset['extras'])
+        portal = extras.value('metadata_original_portal', 'null')
 
         data['broken_rules'][portal][identifier] = []
         broken_rules = data['broken_rules'][portal][identifier]

@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf8 -*-
 
+from ckanext.govdatade.extras import Extras
 from ckanext.govdatade.harvesters.ckanharvester import GovDataHarvester
 from ckanext.govdatade.harvesters.ckanharvester import BerlinCKANHarvester
 from ckanext.govdatade.harvesters.ckanharvester import RlpCKANHarvester
@@ -8,7 +9,6 @@ from ckanext.govdatade.harvesters.ckanharvester import HamburgCKANHarvester
 from ckanext.govdatade.harvesters.ckanharvester import OpenNrwCKANHarvester
 from mock import patch, Mock, ANY, call
 
-import os
 import json
 import httpretty
 import unittest
@@ -19,6 +19,183 @@ class DummyClass:
 
 
 class GovDataHarvesterTest(unittest.TestCase):
+
+    def test_amend_package(self):
+        # prepare
+        harvester = HamburgCKANHarvester()
+        harvester.portal = 'http://hamburg-harvester.de'
+
+        tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "some tag"
+        }, {
+            "vocabulary_id": 2,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "some other tag"
+        }]
+
+        extras = [{
+                'key': 'content_type',
+                'value': 'Kartenebene',
+            }, {
+                'key': 'terms_of_use',
+                'value': {
+                    'license_id': 'cc-by'
+                },
+            }]
+
+        package = {'author': 'Hamburg',
+                   'author_email': 'hh@hamburg.de',
+                   'groups': [{'name': 'transport_und_verkehr'}, {'id': 'geo'}],
+                   'tags': tags_list_dict,
+                   'license_id': 'cc-by',
+                   'point_of_contact': None,
+                   'point_of_contact_address': {'email': None},
+                   'resources': [{'format': 'PDF'}],
+                   'type': 'dataset',
+                   'extras':extras,
+                   'relationships_as_subject': [],
+                   'relationships_as_object': []
+                  }
+
+        # execute
+        GovDataHarvester.amend_package(harvester, package)
+
+        # verify
+        expected_tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "some-tag"
+        }, {
+            "vocabulary_id": 2,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "some-other-tag"
+        }]
+
+        expected_extras = [
+            {
+                'key': 'content_type',
+                'value': 'Kartenebene',
+            },
+            {
+                'key': 'terms_of_use',
+                'value': {'license_id': 'cc-by'},
+            },
+            {
+                'key': 'metadata_original_portal',
+                'value': 'http://hamburg-harvester.de',
+            }]
+
+        self.assertEqual(expected_tags_list_dict, package['tags'])
+        self.assertEqual(expected_extras, package['extras'])
+        self.assertListEqual(
+            package['groups'], [{'id': 'transport_und_verkehr', 'name': 'transport_und_verkehr'},
+                                {'id': 'geo'}])
+        self.assertEqual(package['type'], 'dataset')
+        self.assertEqual(package['resources'], [{'format': 'pdf'}])
+        self.assertNotIn('relationships_as_subject', package)
+        self.assertNotIn('relationships_as_object', package)
+
+    def test_amend_package_without_extras_groups_tags(self):
+        # prepare
+        harvester = HamburgCKANHarvester()
+        harvester.portal = 'http://hamburg-harvester.de'
+
+        package = {'author': 'Hamburg',
+                   'author_email': 'hh@hamburg.de',
+                   'license_id': 'cc-by',
+                   'point_of_contact': None,
+                   'point_of_contact_address': {'email': None},
+                   'resources': [{'format': 'PDF'}],
+                   'type': 'dataset',
+                   'relationships_as_subject': [],
+                   'relationships_as_object': []
+                  }
+
+        # execute
+        GovDataHarvester.amend_package(harvester, package)
+
+        # verify
+        expected_extras = [
+            {
+                'key': 'metadata_original_portal',
+                'value': 'http://hamburg-harvester.de',
+            }]
+        self.assertEqual(package['type'], 'dataset')
+        self.assertEqual(package['resources'], [{'format': 'pdf'}])
+        self.assertNotIn('relationships_as_subject', package)
+        self.assertNotIn('relationships_as_object', package)
+        self.assertNotIn('tags', package)
+        self.assertNotIn('groups', package)
+        self.assertIn('extras', package)
+        self.assertEqual(package['extras'], expected_extras)
+
+    def test_get_min_package_dict(self):
+        # prepare
+        package_dict = {
+            'id': '0123456789',
+            'name': 'name-value',
+            'metadata_modified': '2016-08-19T08:20:01.501641',
+            'other_key': 'other_value',
+            'extras': [
+                {'key': 'moo', 'value': 'boo'}
+            ]
+        }
+
+        # execute
+        result = GovDataHarvester.get_min_package_dict(package_dict)
+
+        # verify
+        expected_package_dict = {
+            'id': '0123456789',
+            'name': 'name-value',
+            'metadata_modified': '2016-08-19T08:20:01.501641'
+        }
+
+        self.assertEqual(result, expected_package_dict)
+
+    def test_has_tag_success(self):
+        harvester = GovDataHarvester()
+
+        tags_list_dict = [{
+            "name": "tag-one"
+        }, {
+            "name": "tag-two"
+        }, {
+            "name": "tag-three"
+        }]
+
+        self.assertTrue(
+            harvester.has_tag(tags_list_dict, 'tag-one')
+        )
+
+    def test_has_tag_failure(self):
+        harvester = GovDataHarvester()
+
+        self.assertFalse(
+            harvester.has_tag('Foo', 'tag-one')
+        )
+
+        tags_list_dict = [{
+            "name": "tag-one"
+        }, {
+            "name": "tag-two"
+        }, {
+            "name": "tag-three"
+        }]
+
+        self.assertFalse(
+            harvester.has_tag(tags_list_dict, 'tag-five')
+        )
 
     def test_compare_metadata_modified_remote_is_newer(self):
 
@@ -51,61 +228,275 @@ class GovDataHarvesterTest(unittest.TestCase):
 
         self.assertRaises(ValueError, harvester.compare_metadata_modified, remoteDatetime, localDatetime)
 
+    def test_set_portal(self):
+        harvester = GovDataHarvester()
+        harvester.portal = 'foo-portal'
+
+        package_dict = {
+            'id': '0123456789',
+            'extras': [
+                {'key': 'moo', 'value': 'boo'}
+            ]
+        }
+
+        harvester.set_portal(package_dict)
+
+        expected_package_dict = {
+            'id': '0123456789',
+            'extras': [
+                {'key': 'moo', 'value': 'boo'},
+                {'key': 'metadata_original_portal', 'value': 'foo-portal'}
+            ]
+        }
+
+        self.assertEqual(package_dict, expected_package_dict)
+
+    def test_lowercase_resources_formats(self):
+        harvester = GovDataHarvester()
+
+        package_dict = {
+            'id': '0123456789',
+            'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
+        }
+        harvester.lowercase_resources_formats(package_dict)
+
+        expected_package_dict = {
+            'id': '0123456789',
+            'resources': [{'format':'csv', 'url': 'http://travis-ci.org'}],
+        }
+
+        self.assertEqual(package_dict, expected_package_dict)
+
+        package_dict = {
+            'id': '0123456789',
+            'resources': [{'format':'UML', 'url': 'http://travis-ci.org'}, {'format':'XML', 'url': 'http://travis-ci.org'}],
+        }
+        harvester.lowercase_resources_formats(package_dict)
+
+        expected_package_dict = {
+            'id': '0123456789',
+            'resources': [{'format':'uml', 'url': 'http://travis-ci.org'}, {'format':'xml', 'url': 'http://travis-ci.org'}],
+        }
+
+        self.assertEqual(package_dict, expected_package_dict)
+
+    def test_tags_dict_to_list(self):
+        harvester = GovDataHarvester()
+        tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag/one&$#?+\\"
+        }, {
+            "vocabulary_id": 2,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag/two"
+        }, {
+            "vocabulary_id": 3,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "/+#`?tag/////three"
+        }, {
+            "vocabulary_id": 4,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag.four"
+        }, {
+            "vocabulary_id": 5,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag-five"
+        }, {
+            "vocabulary_id": 6,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag_six"
+        }, {
+            "vocabulary_id": 7,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag/one, tag/two, Tag/three"
+        }, {
+            "vocabulary_id": 8,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": u"Bevölkerung"
+        }, {
+            "vocabulary_id": 9,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag/one, tag/two,Tag/three"
+        }, {
+            "vocabulary_id": 10,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "Umwelt, Lebensmittel, Futtermittel, Strahlenschutzvorsorge"
+        }]
+
+        harvester.cleanse_tags(tags_list_dict)
+
+        expected_tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tagone"
+        }, {
+            "vocabulary_id": 2,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tagtwo"
+        }, {
+            "vocabulary_id": 3,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tagthree"
+        }, {
+            "vocabulary_id": 4,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag.four"
+        }, {
+            "vocabulary_id": 5,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag-five"
+        }, {
+            "vocabulary_id": 6,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag_six"
+        }, {
+            "vocabulary_id": 7,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tagone-tagtwo-tagthree"
+        }, {
+            "vocabulary_id": 8,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": u"bevölkerung"
+        }, {
+            "vocabulary_id": 9,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tagone-tagtwotagthree"
+        }, {
+            "vocabulary_id": 10,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "umwelt-lebensmittel-futtermittel-strahlenschutzvorsorge"
+        }]
+
+        self.assertEqual(expected_tags_list_dict, tags_list_dict)
+
     def test_cleanse_tags_comma_separated(self):
 
         harvester = GovDataHarvester()
-        tags = ['tagone, tagtwo']
+        tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": 'tagone, tagtwo'
+        }]
 
-        cleansed_tags = harvester.cleanse_tags(tags)
-        self.assertEqual(cleansed_tags, ['tagone-tagtwo'])
+        harvester.cleanse_tags(tags_list_dict)
+
+        expected_tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tagone-tagtwo"
+        }]
+
+        self.assertEqual(expected_tags_list_dict, tags_list_dict)
 
         tags = 'tagone, tagtwo, tagthree, tagfour'
 
-        cleansed_tags = harvester.cleanse_tags(tags)
-        self.assertEqual(cleansed_tags, 'tagone-tagtwo-tagthree-tagfour')
+        self.assertEqual(
+            harvester.cleanse_tags(tags),
+            'tagone-tagtwo-tagthree-tagfour'
+        )
 
     def test_cleanse_tags_special_character(self):
         harvester = GovDataHarvester()
 
-        tags = ['tag/one, tag/two, Tag/three']
-        cleansed_tags = harvester.cleanse_tags(tags)
+        tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag/one, tag/two, Tag/three"
+        }]
 
-        self.assertEqual(cleansed_tags, ['tagone-tagtwo-tagthree'])
+        harvester.cleanse_tags(tags_list_dict)
 
-        tags = [
-            'tag/one&$#?+\\',
-            'tag/two',
-            '/+#`?tag/////three',
-            'tag.four',
-            'tag-five',
-            'tag_six',
-            'tag/one, tag/two, Tag/three',
-            u'Bevölkerung',
-            'tag/one, tag/two,Tag/three',
-            'Umwelt, Lebensmittel, Futtermittel, Strahlenschutzvorsorge',
-        ]
-        cleansed_tags = harvester.cleanse_tags(tags)
+        expected_tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tagone-tagtwo-tagthree"
+        }]
 
-        self.assertEqual(cleansed_tags, [
-            'tagone',
-            'tagtwo',
-            'tagthree',
-            'tag.four',
-            'tag-five',
-            'tag_six',
-            'tagone-tagtwo-tagthree',
-            u'bevölkerung',
-            'tagone-tagtwotagthree',
-            'umwelt-lebensmittel-futtermittel-strahlenschutzvorsorge',
-        ])
+        self.assertEqual(expected_tags_list_dict, tags_list_dict)
 
     def test_cleanse_tags_replace_whitespace_characters(self):
         harvester = GovDataHarvester()
 
-        tags = ['tag  one', 'tag two']
-        cleansed_tags = harvester.cleanse_tags(tags)
+        tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag  one"
+        }, {
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag two"
+        }]
 
-        self.assertEqual(cleansed_tags, ['tag--one', 'tag-two'])
+        harvester.cleanse_tags(tags_list_dict)
+
+        expected_tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag--one"
+        }, {
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag-two"
+        }]
+
+        self.assertEqual(expected_tags_list_dict, tags_list_dict)
 
     @httpretty.activate
     @patch("ckanext.harvest.harvesters.ckanharvester.CKANHarvester.gather_stage")
@@ -168,6 +559,7 @@ class GovDataHarvesterTest(unittest.TestCase):
         package_deprecated = {
                        'id': package_id_deprecated,
                        'name': 'deprectated-package',
+                       'metadata_modified': '2016-08-19T08:20:01.501641',
                        'owner_org': org_id}
         package_existent = {
                        'id': package_id_existent,
@@ -180,8 +572,10 @@ class GovDataHarvesterTest(unittest.TestCase):
         mock_get_action.return_value = mock_action_methods
         # self.rename_datasets_before_delete(deprecated_package_dicts)
         harvester.rename_datasets_before_delete = Mock()
+        harvester.rename_datasets_before_delete.return_value = [package_id_deprecated]
         # self.delete_packages(deprecated_ids)
         harvester.delete_packages = Mock()
+        harvester.delete_packages.return_value = [package_id_deprecated]
         # self.log_deleted_packages_in_file(deprecated_package_dicts, checkpoint_end)
         harvester.log_deleted_packages_in_file = Mock()
 
@@ -204,9 +598,13 @@ class GovDataHarvesterTest(unittest.TestCase):
         ]
         mock_action_methods.assert_has_calls(expected_action_calls_original)
 
-        deprecated_package_dicts = [package_deprecated]
+        package_deprecated_min = {
+                       'id': package_id_deprecated,
+                       'name': 'deprectated-package',
+                       'metadata_modified': '2016-08-19T08:20:01.501641'}
+        deprecated_package_dicts = [package_deprecated_min]
         harvester.rename_datasets_before_delete.assert_called_with(deprecated_package_dicts)
-        harvester.delete_packages.assert_called_once_with(set([package_id_deprecated]))
+        harvester.delete_packages.assert_called_once_with([package_id_deprecated])
         harvester.log_deleted_packages_in_file.assert_called_with(deprecated_package_dicts, ANY)
 
     @patch('ckan.plugins.toolkit.get_action')
@@ -240,26 +638,49 @@ class BerlinHarvesterTest(unittest.TestCase):
 
     def test_tags_are_cleansed_when_amending(self):
         harvester = BerlinCKANHarvester()
+        tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tagone"
+        }, {
+            "vocabulary_id": 2,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tagtwo"
+        }]
 
-        dataset = {'type': 'datensatz',
-                   'groups': [],
-                   'license_id': None,
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'tags': ['tag/one&$#?+\\', 'tag/two'],
-                   'extras': {'metadata_original_portal': None}}
+        dataset = {
+            'type': 'datensatz',
+            'groups': [],
+            'license_id': None,
+            'resources': [
+                {'format':'CSV', 'url': 'http://travis-ci.org'}
+            ],
+            'tags': tags_list_dict,
+            'extras': [
+                {'key': 'metadata_original_portal', 'value': None}
+            ]}
 
         harvester.amend_package(dataset)
         self.assertTrue('tags' in dataset)
-        self.assertEqual(dataset['tags'], ['tagone', 'tagtwo'])
+        self.assertEqual(dataset['tags'], tags_list_dict)
 
     def test_tags_are_not_cleansed_when_not_present(self):
         harvester = BerlinCKANHarvester()
 
-        dataset = {'type': 'datensatz',
-                   'groups': [],
-                   'license_id': None,
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {'metadata_original_portal': None}}
+        dataset = {
+            'type': 'datensatz',
+            'groups': [],
+            'license_id': None,
+            'resources': [
+                {'format':'CSV', 'url': 'http://travis-ci.org'}
+            ],
+            'extras': [
+                {'key': 'metadata_original_portal', 'value': None}
+            ]}
 
         valid = harvester.amend_package(dataset)
         self.assertFalse('tags' in dataset)
@@ -269,98 +690,154 @@ class BerlinHarvesterTest(unittest.TestCase):
 
         harvester = BerlinCKANHarvester()
 
-        dataset = {'type': 'datensatz',
-                   'groups': [],
-                   'license_id': None,
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {'metadata_original_portal': None}}
+        dataset = {
+            'type': 'datensatz',
+            'groups': [],
+            'license_id': None,
+            'resources': [
+                {'format':'CSV', 'url': 'http://travis-ci.org'}
+            ],
+            'extras': [
+                {'key': 'metadata_original_portal', 'value': None}
+            ]}
 
         valid = harvester.amend_package(dataset)
-        self.assertEqual(dataset['extras']['sector'], 'oeffentlich')
+
+        extras = Extras(dataset['extras'])
+        self.assertTrue(extras.key('sector'))
+        self.assertEquals('oeffentlich', extras.value('sector'))
+
+        dataset = {
+            'type': 'datensatz',
+            'groups': [],
+            'license_id': None,
+            'resources': [
+                {'format':'CSV', 'url': 'http://travis-ci.org'}
+            ],
+            'extras': [
+                {'key': 'metadata_original_portal', 'value': None},
+                {'key': 'sector', 'value': None},
+            ]}
+
+        valid = harvester.amend_package(dataset)
+
+        extras = Extras(dataset['extras'])
+        self.assertTrue(extras.key('sector'))
+        self.assertEquals('oeffentlich', extras.value('sector'))
         self.assertTrue(valid)
 
-        dataset = {'type': 'datensatz',
-                   'groups': [],
-                   'license_id': None,
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {'metadata_original_portal': None,
-                              'sector':                   None}}
+        dataset = {
+            'type': 'datensatz',
+            'groups': [],
+            'license_id': None,
+            'resources': [
+                {'format':'CSV', 'url': 'http://travis-ci.org'}
+            ],
+            'extras': [
+                {'key': 'metadata_original_portal', 'value': None},
+                {'key': 'sector', 'value': 'privat'},
+            ]}
 
         valid = harvester.amend_package(dataset)
-        self.assertEqual(dataset['extras']['sector'], 'oeffentlich')
-        self.assertTrue(valid)
 
-        dataset = {'type': 'datensatz',
-                   'groups': [],
-                   'license_id': None,
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {'metadata_original_portal': None,
-                              'sector':                   'privat'}}
-
-        valid = harvester.amend_package(dataset)
-        self.assertEqual(dataset['extras']['sector'], 'privat')
+        extras = Extras(dataset['extras'])
+        self.assertTrue(extras.key('sector'))
+        self.assertEquals('privat', extras.value('sector'))
         self.assertFalse(valid)
 
-        dataset = {'type': 'datensatz',
-                   'groups': [],
-                   'license_id': None,
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {'metadata_original_portal': None,
-                              'sector':                   'andere'}}
+        dataset = {
+            'type': 'datensatz',
+            'groups': [],
+            'license_id': None,
+            'resources': [
+                {'format':'CSV', 'url': 'http://travis-ci.org'}
+            ],
+            'extras': [
+                {'key': 'metadata_original_portal', 'value': None},
+                {'key': 'sector', 'value': 'andere'},
+            ]}
 
         valid = harvester.amend_package(dataset)
-        self.assertEqual(dataset['extras']['sector'], 'andere')
+
+        extras = Extras(dataset['extras'])
+        self.assertTrue(extras.key('sector'))
+        self.assertEquals('andere', extras.value('sector'))
         self.assertFalse(valid)
 
     def test_type_amendment(self):
 
         harvester = BerlinCKANHarvester()
 
-        package = {'type': None,
-                   'groups': [],
-                   'license_id': None,
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {'metadata_original_portal': None}}
+        package = {
+            'type': None,
+            'groups': [],
+            'license_id': None,
+            'resources': [
+                {'format':'CSV', 'url': 'http://travis-ci.org'}
+            ],
+            'extras': [
+                {'key': 'metadata_original_portal', 'value': None},
+            ]}
 
         valid = harvester.amend_package(package)
         self.assertEqual(package['type'], 'datensatz')
         self.assertTrue(valid)
 
-        package = {'type': 'datensatz',
-                   'groups': [],
-                   'license_id': None,
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {'metadata_original_portal': None}}
+        package = {
+            'type': 'datensatz',
+            'groups': [],
+            'license_id': None,
+            'resources': [
+                {'format':'CSV', 'url': 'http://travis-ci.org'}
+            ],
+            'extras': [
+                {'key': 'metadata_original_portal', 'value': None}
+            ]}
 
         valid = harvester.amend_package(package)
         self.assertEqual(package['type'], 'datensatz')
         self.assertTrue(valid)
 
-        package = {'type': 'dokument',
-                   'groups': [],
-                   'license_id': None,
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {'metadata_original_portal': None}}
+        package = {
+            'type': 'dokument',
+            'groups': [],
+            'license_id': None,
+            'resources': [
+                {'format':'CSV', 'url': 'http://travis-ci.org'}
+            ],
+            'extras': [
+                {'key': 'metadata_original_portal', 'value': None}
+            ]}
 
         valid = harvester.amend_package(package)
         self.assertEqual(package['type'], 'dokument')
         self.assertTrue(valid)
 
-        package = {'type': 'app',
-                   'groups': [],
-                   'license_id': None,
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {'metadata_original_portal': None}}
+        package = {
+            'type': 'app',
+            'groups': [],
+            'license_id': None,
+            'resources': [
+                {'format':'CSV', 'url': 'http://travis-ci.org'},
+            ],
+            'extras': [
+                {'key': 'metadata_original_portal', 'value': None}
+            ]}
 
         valid = harvester.amend_package(package)
         self.assertEqual(package['type'], 'app')
         self.assertTrue(valid)
 
-        package = {'type': 'garbage',
-                   'groups': [],
-                   'license_id': None,
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {'metadata_original_portal': None}}
+        package = {
+            'type': 'garbage',
+            'groups': [],
+            'license_id': None,
+            'resources': [
+                {'format':'CSV', 'url': 'http://travis-ci.org'},
+            ],
+             'extras': [
+                {'key': 'metadata_original_portal', 'value': None}
+            ]}
 
         valid = harvester.amend_package(package)
         self.assertEqual(package['type'], 'datensatz')
@@ -371,37 +848,57 @@ class BerlinHarvesterTest(unittest.TestCase):
         harvester = BerlinCKANHarvester()
         default = 'http://datenregister.berlin.de'
 
-        dataset = {'type': 'datensatz',
-                   'groups': [],
-                   'license_id': None,
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {}}
+        dataset = {
+            'type': 'datensatz',
+            'groups': [],
+            'license_id': None,
+            'resources': [
+                {'format':'CSV', 'url': 'http://travis-ci.org'}
+            ],
+            'extras': []
+        }
 
         valid = harvester.amend_package(dataset)
-        portal = dataset['extras']['metadata_original_portal']
-        self.assertEqual(portal, default)
+        extras = Extras(dataset['extras'])
+
+        self.assertTrue(extras.key('metadata_original_portal'))
+        self.assertEquals(default, extras.value('metadata_original_portal'))
         self.assertTrue(valid)
 
-        dataset = {'type': 'datensatz',
-                   'groups': [],
-                   'license_id': None,
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {'metadata_original_portal': None}}
+        dataset = {
+            'type': 'datensatz',
+            'groups': [],
+            'license_id': None,
+            'resources': [
+                {'format':'CSV', 'url': 'http://travis-ci.org'}
+            ],
+            'extras': [
+                {'key': 'metadata_original_portal', 'value': None}
+            ]}
 
         valid = harvester.amend_package(dataset)
-        portal = dataset['extras']['metadata_original_portal']
-        self.assertEqual(portal, default)
+        extras = Extras(dataset['extras'])
+
+        self.assertTrue(extras.key('metadata_original_portal'))
+        self.assertEquals(default, extras.value('metadata_original_portal'))
         self.assertTrue(valid)
 
-        dataset = {'type': 'datensatz',
-                   'groups': [],
-                   'license_id': None,
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {'metadata_original_portal': 'www.example.com'}}
+        dataset = {
+            'type': 'datensatz',
+            'groups': [],
+            'license_id': None,
+            'resources': [
+                {'format':'CSV', 'url': 'http://travis-ci.org'}
+            ],
+            'extras': [
+                {'key': 'metadata_original_portal', 'value': 'www.example.com'},
+            ]}
 
         valid = harvester.amend_package(dataset)
-        portal = dataset['extras']['metadata_original_portal']
-        self.assertEqual(portal, default)
+        extras = Extras(dataset['extras'])
+
+        self.assertTrue(extras.key('metadata_original_portal'))
+        self.assertEquals(default, extras.value('metadata_original_portal'))
         self.assertTrue(valid)
 
     def test_amend_package(self):
@@ -431,7 +928,7 @@ class BerlinHarvesterTest(unittest.TestCase):
                    'notes': '',
                    'title': 'Test Dataset',
                    'ratings_average': None,
-                   'extras': {},
+                   'extras': [],
                    'ratings_count': 0,
                    'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
                    'revision_id': '411b25f9-1b8f-4f2a-90ae-05d3e8ff8d33'}
@@ -449,32 +946,66 @@ class BerlinHarvesterTest(unittest.TestCase):
 
         self.assertEqual(package['license_id'], 'notspecified')
         self.assertEqual(len(package['groups']), 4)
-        self.assertTrue('wirtschaft_arbeit' in package['groups'])
-        self.assertTrue('geo' in package['groups'])
-        self.assertTrue('umwelt_klima' in package['groups'])
-        self.assertTrue('infrastruktur_bauen_wohnen' in package['groups'])
+        self.assertListEqual(
+            package['groups'],
+            [{'id': 'wirtschaft_arbeit', 'name': 'wirtschaft_arbeit'},
+            {'id': 'geo', 'name': 'geo'},
+            {'id': 'umwelt_klima', 'name': 'umwelt_klima'},
+            {'id': 'infrastruktur_bauen_wohnen', 'name': 'infrastruktur_bauen_wohnen'}])
 
 class RlpHarvesterTest(unittest.TestCase):
 
     def test_gdi_rlp_package(self):
+        extras = [{
+                'key': 'content_type',
+                'value': 'Kartenebene',
+            }, {
+                'key': 'terms_of_use',
+                'value': {'license_id': 'cc-by'},
+            }]
 
-        package = {'author':                   'RLP',
-                   'author_email':             'rlp@rlp.de',
-                   'groups':                   ['gdi-rp', 'geo'],
-                   'license_id':               'cc-by',
-                   'point_of_contact':         None,
+        package = {'author': 'RLP',
+                   'author_email': 'rlp@rlp.de',
+                   'groups': [{'name': 'gdi-rp'}, {'name': 'geo'}],
+                   'license_id': 'cc-by',
+                   'point_of_contact': None,
                    'point_of_contact_address': {'email': None},
-                   'resources':                [{'format': 'pdf'}],
-                   'type':                     None,
-                   'extras':                   {'content_type': 'Kartenebene',
-                                                'terms_of_use': {'license_id':
-                                                                 'cc-by'}}}
+                   'resources': [{'format': 'pdf'}, {'format': 'csv'}],
+                   'type': None,
+                   'extras': extras,
+                   }
 
         harvester = RlpCKANHarvester()
         harvester.amend_package(package)
-        self.assertNotIn('gdi-rp', package['groups'])
-        self.assertIn('geo', package['groups'])
+        self.assertListEqual(package['groups'], [{'id': 'geo', 'name': 'geo'}])
         self.assertEqual(package['type'], 'datensatz')
+        self.assertEqual(package['license_id'], 'cc-by')
+
+    def test_gdi_rlp_package_license_cc_by_nc(self):
+        extras = [{
+                'key': 'content_type',
+                'value': 'Kartenebene',
+            }, {
+                'key': 'terms_of_use',
+                'value': {'license_id': 'cc-by'},
+            }]
+
+        package = {'author': 'RLP',
+                   'author_email': 'rlp@rlp.de',
+                   'groups': [{'name': 'gdi-rp'}, {'name': 'geo'}],
+                   'license_id': 'cc-by-nc',
+                   'point_of_contact': None,
+                   'point_of_contact_address': {'email': None},
+                   'resources': [{'format': 'pdf'}],
+                   'type': None,
+                   'extras': extras,
+                   }
+
+        harvester = RlpCKANHarvester()
+        harvester.amend_package(package)
+        self.assertListEqual(package['groups'], [{'id': 'geo', 'name': 'geo'}])
+        self.assertEqual(package['type'], 'dokument')
+        self.assertEqual(package['license_id'], 'cc-nc')
 
 class OpenNRWHarvesterTest(unittest.TestCase):
 
@@ -483,15 +1014,33 @@ class OpenNRWHarvesterTest(unittest.TestCase):
         # prepare
         harvester = OpenNrwCKANHarvester()
         default = 'http://open.nrw/'
-        package = {'author':                   'OpenNRW',
-                   'author_email':             'opennrw@open.nrw',
-                   'groups':                   ['gesundheit', 'geo'],
-                   'tags':                     ['tag1', 'tag 2'],
-                   'license_id':               'cc-by',
-                   'resources':                [{'format': 'PDF', 'url': 'http://test.de'}],
-                   'type':                     'dataset',
-                   'extras':                   {'metadata_original_portal': 'foo',
-                                                'metadata_transformer': 'bar'}}
+
+        tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag1"
+        }, {
+            "vocabulary_id": 2,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "tag2"
+        }]
+
+        package = {'author': 'OpenNRW',
+                   'author_email': 'opennrw@open.nrw',
+                   'groups': ['gesundheit', 'geo'],
+                   'tags': tags_list_dict,
+                   'license_id': 'cc-by',
+                   'resources': [{'format': 'PDF', 'url': 'http://test.de'}],
+                   'type': 'dataset',
+                   'extras': {
+                       'metadata_original_portal': 'foo',
+                       'metadata_transformer': 'bar',
+                   }}
+
         harvest_object = DummyClass()
         harvest_object.content = json.dumps(package)
 
@@ -501,7 +1050,7 @@ class OpenNRWHarvesterTest(unittest.TestCase):
         # verify
         actual_harvest_object_content = json.loads(harvest_object.content)
         self.assertEqual(['gesundheit', 'geo'], actual_harvest_object_content['groups'])
-        self.assertEqual([u'tag1', u'tag-2'], actual_harvest_object_content['tags'])
+        self.assertEqual(tags_list_dict, actual_harvest_object_content['tags'])
         self.assertEqual(actual_harvest_object_content['type'], 'dataset')
         self.assertEqual(actual_harvest_object_content['resources'][0]['format'], 'pdf')
         portal = actual_harvest_object_content['extras']['metadata_original_portal']
@@ -514,68 +1063,175 @@ class HamburgHarvesterTest(unittest.TestCase):
 
     def test_hamburg_package_document(self):
 
-        package = {'author':                   'Hamburg',
-                   'author_email':             'hh@hamburg.de',
-                   'groups':                   ['transport-und-verkehr'],
-                   'tags':                   ['some tag', 'GovData'],
-                   'license_id':               'cc-by',
-                   'point_of_contact':         None,
+        tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "some tag"
+        }, {
+            "vocabulary_id": 2,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "GovData"
+        }]
+
+        extras = [{
+                'key': 'content_type',
+                'value': 'Kartenebene',
+            }, {
+                'key': 'terms_of_use',
+                'value': {
+                    'license_id': 'cc-by'
+                },
+            }]
+
+        package = {'author': 'Hamburg',
+                   'author_email': 'hh@hamburg.de',
+                   'groups': ['transport-und-verkehr'],
+                   'tags': tags_list_dict,
+                   'license_id': 'cc-by',
+                   'point_of_contact': None,
                    'point_of_contact_address': {'email': None},
-                   'resources':                [{'format': 'pdf'}],
-                   'type':                     'document',
-                   'extras':                   {'content_type': 'Kartenebene',
-                                                'terms_of_use': {'license_id':
-                                                                 'cc-by'}}}
+                   'resources': [{'format': 'pdf'}],
+                   'type': 'document',
+                   'extras': extras,
+                   }
 
         harvester = HamburgCKANHarvester()
         result = harvester.amend_package(package)
         self.assertTrue(result)
-        self.assertIn('govdata', package['tags'])
-        self.assertIn('transport_verkehr', package['groups'])
+
+        expected_tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "some-tag"
+        }, {
+            "vocabulary_id": 2,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "govdata"
+        }]
+
+        self.assertEqual(expected_tags_list_dict, package['tags'])
+
+        self.assertListEqual(
+            package['groups'], [{'id': 'transport_verkehr', 'name': 'transport_verkehr'}])
         self.assertEqual(package['type'], 'dokument')
 
     def test_hamburg_package_dataset(self):
 
-        package = {'author':                   'Hamburg',
-                   'author_email':             'hh@hamburg.de',
-                   'groups':                   ['transport-und-verkehr'],
-                   'tags':                   ['some tag', 'GovData'],
-                   'license_id':               'cc-by',
-                   'point_of_contact':         None,
+        tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "some tag"
+        }, {
+            "vocabulary_id": 2,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "some other tag"
+        }]
+
+        extras = [{
+                'key': 'content_type',
+                'value': 'Kartenebene',
+            }, {
+                'key': 'terms_of_use',
+                'value': {
+                    'license_id': 'cc-by'
+                },
+            }]
+
+        package = {'author': 'Hamburg',
+                   'author_email': 'hh@hamburg.de',
+                   'groups': ['transport-und-verkehr'],
+                   'tags': tags_list_dict,
+                   'license_id': 'cc-by',
+                   'point_of_contact': None,
                    'point_of_contact_address': {'email': None},
-                   'resources':                [{'format': 'pdf'}],
-                   'type':                     'dataset',
-                   'extras':                   {'content_type': 'Kartenebene',
-                                                'terms_of_use': {'license_id':
-                                                                 'cc-by'}}}
+                   'resources': [{'format': 'pdf'}],
+                   'type': 'dataset',
+                   'extras':extras,
+                  }
 
         harvester = HamburgCKANHarvester()
         result = harvester.amend_package(package)
+
         self.assertTrue(result)
-        self.assertIn('govdata', package['tags'])
-        self.assertIn('transport_verkehr', package['groups'])
+
+        expected_tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "some-tag"
+        }, {
+            "vocabulary_id": 2,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "some-other-tag"
+        }]
+
+
+        self.assertEqual(expected_tags_list_dict, package['tags'])
+        self.assertListEqual(
+            package['groups'], [{'id': 'transport_verkehr', 'name': 'transport_verkehr'}])
         self.assertEqual(package['type'], 'datensatz')
 
     def test_hamburg_package_skipping_without_tag_govdata(self):
 
-        package = {'author':                   'Hamburg',
-                   'author_email':             'hh@hamburg.de',
-                   'groups':                   ['transport-und-verkehr'],
-                   'tags':                   ['some tag'],
-                   'license_id':               'cc-by',
-                   'point_of_contact':         None,
+        tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "some tag"
+        }]
+
+        extras = [{
+                'key': 'content_type',
+                'value': 'Kartenebene',
+            }, {
+                'key': 'terms_of_use',
+                'value': {
+                    'license_id': 'cc-by'
+                },
+            }]
+
+        package = {'author': 'Hamburg',
+                   'author_email': 'hh@hamburg.de',
+                   'groups': ['transport-und-verkehr'],
+                   'tags': tags_list_dict,
+                   'license_id': 'cc-by',
+                   'point_of_contact': None,
                    'point_of_contact_address': {'email': None},
-                   'resources':                [{'format': 'pdf'}],
-                   'type':                     'document',
-                   'extras':                   {'content_type': 'Kartenebene',
-                                                'terms_of_use': {'license_id':
-                                                                 'cc-by'}}}
+                   'resources': [{'format': 'pdf'}],
+                   'type': 'document',
+                   'extras': extras,
+                  }
 
         harvester = HamburgCKANHarvester()
         result = harvester.amend_package(package)
+
+        expected_tags_list_dict = [{
+            "vocabulary_id": 1,
+            "state": "active",
+            "display_name": "offene-daten-k\u00f6ln",
+            "id": "07767723-df63-44fa-8bb1-002cf932c2f6",
+            "name": "some-tag"
+        }]
+
         self.assertFalse(result)
-        self.assertIn('some-tag', package['tags'])
-        self.assertIn('transport-und-verkehr', package['groups'])
+        self.assertEqual(expected_tags_list_dict, package['tags'])
+        self.assertListEqual(package['groups'], ['transport-und-verkehr'])
         self.assertEqual(package['type'], 'document')
 
     def test_amend_portal_without_metadata_original_portal(self):
@@ -583,21 +1239,26 @@ class HamburgHarvesterTest(unittest.TestCase):
         harvester = HamburgCKANHarvester()
         default = 'http://suche.transparenz.hamburg.de/'
 
-        package = {'author':                   'Hamburg',
-                   'author_email':             'hh@hamburg.de',
-                   'groups':                   ['transport-und-verkehr'],
-                   'tags':                   ['some tag', 'GovData'],
-                   'license_id':               'cc-by',
-                   'point_of_contact':         None,
+        package = {'author': 'Hamburg',
+                   'author_email': 'hh@hamburg.de',
+                   'groups': ['transport-und-verkehr'],
+                   'tags': [],
+                   'license_id': 'cc-by',
+                   'point_of_contact': None,
                    'point_of_contact_address': {'email': None},
                    'type': 'datensatz',
-                   'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {}}
+                   'resources': [{
+                       'format': 'CSV',
+                       'url': 'http://travis-ci.org'
+                   }],
+                   'extras': []}
 
         valid = harvester.amend_package(package)
-        portal = package['extras']['metadata_original_portal']
-        self.assertEqual(portal, default)
+        extras = Extras(package['extras'])
+        self.assertTrue(extras.key('metadata_original_portal'))
+        self.assertEquals(default, extras.value('metadata_original_portal'))
         self.assertTrue(valid)
+
 
     def test_amend_portal_metadata_original_portal_none(self):
 
@@ -613,11 +1274,12 @@ class HamburgHarvesterTest(unittest.TestCase):
                    'point_of_contact_address': {'email': None},
                    'type': 'datensatz',
                    'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {'metadata_original_portal': None}}
+                   'extras': [{'key': 'metadata_original_portal', 'value': None}]}
 
         valid = harvester.amend_package(package)
-        portal = package['extras']['metadata_original_portal']
-        self.assertEqual(portal, default)
+        extras = Extras(package['extras'])
+        self.assertTrue(extras.key('metadata_original_portal'))
+        self.assertEquals(default, extras.value('metadata_original_portal'))
         self.assertTrue(valid)
 
     def test_amend_portal_metadata_original_portal_different(self):
@@ -634,9 +1296,10 @@ class HamburgHarvesterTest(unittest.TestCase):
                    'point_of_contact_address': {'email': None},
                    'type': 'datensatz',
                    'resources': [{'format':'CSV', 'url': 'http://travis-ci.org'}],
-                   'extras': {'metadata_original_portal': 'www.example.com'}}
+                   'extras': [{'key': 'metadata_original_portal', 'value': 'www.example.com'}]}
 
         valid = harvester.amend_package(package)
-        portal = package['extras']['metadata_original_portal']
-        self.assertEqual(portal, default)
+        extras = Extras(package['extras'])
+        self.assertTrue(extras.key('metadata_original_portal'))
+        self.assertEquals(default, extras.value('metadata_original_portal'))
         self.assertTrue(valid)

@@ -1,7 +1,9 @@
 #!/usr/bin/python
 # -*- coding: utf8 -*-
 
+from ckanext.govdatade.extras import Extras
 from ckanext.govdatade.harvesters.jsonharvester import JSONZipBaseHarvester, JSONDumpBaseCKANHarvester
+from ckanext.govdatade.harvesters.jsonharvester import BremenCKANHarvester
 from codecs import BOM_UTF8
 from mock import patch, Mock
 
@@ -154,3 +156,98 @@ class JSONDumpBaseCKANHarvesterTest(unittest.TestCase):
         package_ids_generated_from_name = ['a48ef665-50dd-5a35-b439-285d6cb84b05',
                                            '2042fcbd-432f-5542-88b5-fc95a181c5c3']
         mock_super.assert_called_once_with(package_ids_generated_from_name, harvest_job)
+
+class BremenCKANHarvesterTest(unittest.TestCase):
+
+    def test_fix_terms_of_use(self):
+        # prepare
+        harvester = BremenCKANHarvester()
+
+        extras_dict_list = [{
+                'key': 'content_type',
+                'value': 'Kartenebene'
+            }, {
+                'key': 'terms_of_use',
+                'value': json.dumps({
+                    "licence_id": "cc-by",
+                    "other": "",
+                    "licence_url": "",
+                    "attribution_text": "Creative Commons Namensnennung (CC BY 3.0)"
+                })
+            }]
+        extras = Extras(extras_dict_list)
+
+        # execute
+        harvester.fix_terms_of_use(extras)
+
+        # verify
+        expected_extras_dict_list = [{
+                'key': 'content_type',
+                'value': 'Kartenebene'
+            }, {
+                'key': 'terms_of_use',
+                'value': {
+                    "license_id": "cc-by",
+                    "other": "",
+                    "license_url": "",
+                    "attribution_text": "Creative Commons Namensnennung (CC BY 3.0)"
+                }
+            }]
+        actual_extras = extras.get()
+        # change dict as string value to dict for easier assert
+        for extra in actual_extras:
+            if extra['key'] == 'terms_of_use':
+                extra['value'] = json.loads(extra['value'])
+        self.assertEqual(actual_extras, expected_extras_dict_list)
+
+    def test_fix_terms_of_use_not_in_dict(self):
+        # prepare
+        harvester = BremenCKANHarvester()
+
+        extras_dict_list = [{
+                'key': 'content_type',
+                'value': 'Kartenebene'
+            }]
+        extras = Extras(extras_dict_list)
+
+        # execute
+        harvester.fix_terms_of_use(extras)
+
+        # verify
+        expected_extras_dict_list = [{
+                'key': 'content_type',
+                'value': 'Kartenebene'
+            }]
+        self.assertEqual(extras.get(), expected_extras_dict_list)
+
+    def test_fix_terms_of_use_without_licence_id_and_licence_url(self):
+        # prepare
+        harvester = BremenCKANHarvester()
+
+        extras_dict_list = [{
+                'key': 'content_type',
+                'value': 'Kartenebene'
+            }, {
+                'key': 'terms_of_use',
+                'value': json.dumps({
+                    "other": "",
+                    "attribution_text": "Creative Commons Namensnennung (CC BY 3.0)"
+                })
+            }]
+        extras = Extras(extras_dict_list)
+
+        # execute
+        harvester.fix_terms_of_use(extras)
+
+        # verify
+        expected_extras_dict_list = [{
+                'key': 'content_type',
+                'value': 'Kartenebene'
+            }, {
+                'key': 'terms_of_use',
+                'value': json.dumps({
+                    "other": "",
+                    "attribution_text": "Creative Commons Namensnennung (CC BY 3.0)"
+                })
+            }]
+        self.assertEqual(extras.get(), expected_extras_dict_list)
