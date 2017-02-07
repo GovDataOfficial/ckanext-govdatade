@@ -463,6 +463,34 @@ class GovDataHarvesterTest(unittest.TestCase):
 
         self.assertEqual(expected_tags_list_dict, tags_list_dict)
 
+    def test_cleanse_tags_erlaubte_zeichen(self):
+        harvester = GovDataHarvester()
+
+        tags_list_dict = [{
+            "name": u' Tag\xe4\xfc\xdf\xf6\xc4\xd6\xdc-_ . '
+        }]
+
+        harvester.cleanse_tags(tags_list_dict)
+
+        expected_tags_list_dict = [{
+            "name": u'tag\xe4\xfc\xdf\xf6\xe4\xf6\xfc-_-.'
+        }]
+
+        self.assertEqual(expected_tags_list_dict, tags_list_dict)
+
+    def test_cleanse_special_characters_erlaubte_zeichen(self):
+        # prepare
+        harvester = GovDataHarvester()
+
+        tag = u' Tag\xe4\xfc\xdf\xf6\xc4\xd6\xdc-_ . '
+
+        # execute
+        result = harvester.cleanse_special_characters(tag)
+
+        # verify
+
+        self.assertEqual(result, u'tag\xe4\xfc\xdf\xf6\xe4\xf6\xfc-_-.')
+
     def test_cleanse_tags_replace_whitespace_characters(self):
         harvester = GovDataHarvester()
 

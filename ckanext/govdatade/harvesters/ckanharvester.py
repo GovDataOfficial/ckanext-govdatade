@@ -199,7 +199,7 @@ class GovDataHarvester(CKANHarvester):
     def cleanse_special_characters(cls, tag):
         '''Cleans a given tag of special characters.'''
         tag = tag.lower().strip()
-        return re.sub(u'[^a-zA-ZÄÖÜäöü0-9 \-_\.]', '', tag).replace(' ', '-')
+        return re.sub(u'[^a-zA-ZÄÖÜäöüß0-9 \-_\.]', '', tag).replace(' ', '-')
 
     @classmethod
     def build_context(cls):
