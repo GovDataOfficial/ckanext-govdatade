@@ -1,24 +1,124 @@
 #!/usr/bin/python
 # -*- coding: utf8 -*-
 
+import json
+import unittest
+
 from ckanext.govdatade.extras import Extras
-from ckanext.govdatade.harvesters.ckanharvester import GovDataHarvester
 from ckanext.govdatade.harvesters.ckanharvester import BerlinCKANHarvester
-from ckanext.govdatade.harvesters.ckanharvester import RlpCKANHarvester
+from ckanext.govdatade.harvesters.ckanharvester import DatahubCKANHarvester
+from ckanext.govdatade.harvesters.ckanharvester import GovDataHarvester
 from ckanext.govdatade.harvesters.ckanharvester import HamburgCKANHarvester
 from ckanext.govdatade.harvesters.ckanharvester import OpenNrwCKANHarvester
+from ckanext.govdatade.harvesters.ckanharvester import RlpCKANHarvester
+from ckanext.govdatade.harvesters.ckanharvester import RostockCKANHarvester
 from mock import patch, Mock, ANY, call
-
-import json
 import httpretty
-import unittest
 
 
 class DummyClass:
     pass
 
 
+class MigrationFunctionHelper(object):
+    """
+    Keeps a serialized copy of the apply_to argument to be independent of the actual
+    argument.
+    """
+    def __init__(self):
+        self.dict_str = ''
+
+    def apply_to(self, dataset):
+        """
+        Meant to be used as mock side effect for MigrationFunctionExecutor.
+        """
+        self.dict_str = json.dumps(dataset)
+
+
 class GovDataHarvesterTest(unittest.TestCase):
+
+    @patch('ckanext.govdatade.harvesters.ckanharvester.get_action')
+    def test_verify_transformer(self, mock_get_action):
+        local_modified = '2017-08-14T10:00:00.000'
+        remote_modified = '2017-08-15T10:00:00.000'
+        local_newer_modified = '2017-08-17T10:00:00.000'
+
+        harvester = HamburgCKANHarvester()
+
+        # Return local dataset
+        def mock_get_action_function(context, data_dict):
+            if data_dict["q"] == 'alternate_identifier:"hasone"':
+                return {
+                           'count': 1,
+                           'results': [{
+                               'metadata_modified': local_modified
+                           }]
+                       }
+            elif data_dict["q"] == 'alternate_identifier:"nodata"':
+                return {
+                           'count': 0
+                       }
+            elif data_dict["q"] == 'alternate_identifier:"newer"':
+                return {
+                           'count': 1,
+                           'results': [{
+                               'metadata_modified': local_newer_modified
+                           }]
+                       }
+
+        mock_get_action.return_value = mock_get_action_function
+
+        # Prepare remote dataset, which is newer
+        remote_dataset = json.dumps({
+                'metadata_modified': remote_modified,
+                'extras': {
+                    'alternate_identifier': 'hasone'
+                }
+            })
+
+        result = harvester.verify_transformer(remote_dataset)
+        self.assertTrue(result, "Dataset was not accepted as update.")
+
+        # Prepare remote dataset, which is newer - and no local dataset, so it is to be accepted
+        remote_dataset = json.dumps({
+                'metadata_modified': remote_modified,
+                'extras': {
+                    'alternate_identifier': 'nodata'
+                }
+            })
+
+        result = harvester.verify_transformer(remote_dataset)
+        self.assertTrue(result, "Dataset was not accepted as update.")
+
+        # Prepare remote dataset without ID - acccept
+        remote_dataset = json.dumps({
+                'extras': {
+                }
+            })
+
+        result = harvester.verify_transformer(remote_dataset)
+        self.assertTrue(result, "Dataset was not accepted as update.")
+
+        # Prepare remote dataset without timestamp - reject
+        remote_dataset = json.dumps({
+                'extras': {
+                    'alternate_identifier': 'hasone'
+                }
+            })
+
+        result = harvester.verify_transformer(remote_dataset)
+        self.assertFalse(result, "Dataset should not be accepted as update.")
+
+        # Prepare remote dataset - and local dataset is newer, so reject this
+        remote_dataset = json.dumps({
+                'metadata_modified': remote_modified,
+                'extras': {
+                    'alternate_identifier': 'newer'
+                }
+            })
+
+        result = harvester.verify_transformer(remote_dataset)
+        self.assertFalse(result, "Dataset should not be accepted as update.")
 
     def test_amend_package(self):
         # prepare
@@ -93,6 +193,10 @@ class GovDataHarvesterTest(unittest.TestCase):
             {
                 'key': 'metadata_original_portal',
                 'value': 'http://hamburg-harvester.de',
+            },
+            {
+                'key': 'metadata_harvested_portal',
+                'value': 'http://hamburg-harvester.de',
             }]
 
         self.assertEqual(expected_tags_list_dict, package['tags'])
@@ -128,6 +232,10 @@ class GovDataHarvesterTest(unittest.TestCase):
         expected_extras = [
             {
                 'key': 'metadata_original_portal',
+                'value': 'http://hamburg-harvester.de',
+            },
+            {
+                'key': 'metadata_harvested_portal',
                 'value': 'http://hamburg-harvester.de',
             }]
         self.assertEqual(package['type'], 'dataset')
@@ -223,7 +331,7 @@ class GovDataHarvesterTest(unittest.TestCase):
 
         harvester = GovDataHarvester()
 
-        localDatetime = '2016-03-23T07:20:30' # wrong format
+        localDatetime = '2016-03-23T07:20:30'  # wrong format
         remoteDatetime = '2016-03-22T06:30:10.00000'
 
         self.assertRaises(ValueError, harvester.compare_metadata_modified, remoteDatetime, localDatetime)
@@ -245,7 +353,8 @@ class GovDataHarvesterTest(unittest.TestCase):
             'id': '0123456789',
             'extras': [
                 {'key': 'moo', 'value': 'boo'},
-                {'key': 'metadata_original_portal', 'value': 'foo-portal'}
+                {'key': 'metadata_original_portal', 'value': 'foo-portal'},
+                {'key': 'metadata_harvested_portal', 'value': 'foo-portal'}
             ]
         }
 
@@ -565,7 +674,6 @@ class GovDataHarvesterTest(unittest.TestCase):
         package_id_deprecated = 'abc'
         package_id_existent = 'efg'
         remote_package_ids = [package_id_existent]
-        local_package_ids = [package_id_deprecated, package_id_existent]
         source_id = 'xyz'
         source_url = 'http://test.de/'
         source = DummyClass()
@@ -620,7 +728,7 @@ class GovDataHarvesterTest(unittest.TestCase):
         expected_action_calls_original = [
             call({'ignore_auth': True, 'model': ANY, 'session': ANY, 'user': u'harvest', 'api_version': 1},
                  {'id': source_id}),
-            call({}, {'fq': ('+owner_org:"%s" +metadata_original_portal:"%s" -type:"harvest"' %
+            call({}, {'fq': ('+owner_org:"%s" +metadata_harvested_portal:"%s" -type:"harvest"' %
                              (org_id, harvester.portal)),
                       'rows': 500, 'start': 0})
         ]
@@ -661,6 +769,130 @@ class GovDataHarvesterTest(unittest.TestCase):
                       'api_version': 1},
                      {'id': to_delete_id}))
         mock_action_methods.assert_has_calls(expected_action_calls_original)
+
+    @patch('ckanext.govdatade.harvesters.ckanharvester.CKANHarvester.import_stage')
+    @patch('ckanext.govdatade.harvesters.ckanharvester.migration_functions.MigrationFunctionExecutor')
+    def test_import_stage_migration(self, mock_migration_executor,
+                                    mock_super_import_stage):
+        """
+        Checks if datasets are migrated when calling import_stage.
+        """
+        harvester = GovDataHarvester()
+        package = {u'type': u'datensatz',
+                   u'author_email': u'author@example.com',
+                   u'groups': [u'gesundheit', u'geo'],
+                   u'license_id': u'cc-by',
+                   u'resources': [{u'format': u'PDF', u'url': u'http://test.de'}],
+                   u'extras': {
+                       u'metadata_original_portal': u'foo',
+                       u'metadata_transformer': u'bar',
+                   }}
+
+        # used instance of MigrationFunctionExecutor
+        migration_exec_instance = mock_migration_executor.return_value
+
+        # use the helper to capture the state of the dict when apply_to is called
+        # (actual dict is modified, e.g. by changing the type attribute)
+        apply_helper = MigrationFunctionHelper()
+        migration_exec_instance.apply_to.side_effect = apply_helper.apply_to
+
+        harvest_object = DummyClass()
+        harvest_object.content = json.dumps(package)
+
+        # mock return value from super
+        mock_super_import_stage.return_value = True
+
+        result = harvester.import_stage(harvest_object)
+
+        # check return value from super
+        self.assertTrue(result)
+
+        # check if the migration was called once with the dataset
+        self.assertEquals(1, migration_exec_instance.apply_to.call_count,
+                          'MigrationFunctionExecutor.apply_to not called exactly once')
+
+        self.assertDictEqual(package, json.loads(apply_helper.dict_str))
+
+        # check if the result has the correct type
+        new_content = json.loads(harvest_object.content)
+        self.assertEquals(new_content['type'], 'dataset', 'Type was not migrated')
+
+        mock_super_import_stage.assert_called_once_with(harvest_object)
+
+
+class HarvesterMigrationBaseTest(unittest.TestCase):
+    """
+    Base class which allows tests to check if harvesters migrate datasets when importing.
+
+    It suffices to look if GovDataHarvester.import_stage is called, as it performs
+    the migration (see GovDataHarvesterTest.test_import_stage_migration).
+    """
+
+    @patch('ckanext.govdatade.harvesters.ckanharvester.GovDataHarvester.import_stage')
+    def check_harvesters_migration(self, harvester_classes, package_dict,
+                                   mock_gd_import=None):
+        """
+        Given a list of harvester classes and a package, check if
+        GovDataHarvester.import_stage is called when import_stage is called for the harvesters.
+        For all Harvesters, amend_package is patched such that a package is always assumed valid.
+        The parameter mock_gd_import is set by a patch decorator for GovDataHarvester.import_stage.
+        """
+        # used to skip actual package_amend
+        amend_mock = Mock()
+        amend_mock.return_value = True
+
+        # mock return value from super
+        mock_gd_import.return_value = True
+
+        expected_calls = 1
+
+        for Harvester in harvester_classes:
+            harvest_object = DummyClass()
+            harvest_object.content = json.dumps(package_dict)
+
+            # mock amend_package such that it does nothing and returns true.
+            with patch.object(Harvester, 'amend_package', amend_mock, create=True):
+                instance = Harvester()
+                result = instance.import_stage(harvest_object)
+                # check return value from super
+                self.assertTrue(result)
+
+            self.assertEquals(expected_calls, mock_gd_import.call_count,
+                              'GovDataHarvester.import_stage not called for '
+                              + Harvester.__name__)
+            expected_calls += 1
+
+
+class HarvesterMigrationTest(HarvesterMigrationBaseTest):
+    """
+    Checks for all non-JSON harvesters if they migrate datasets when importing.
+    """
+
+    def test_govdataharvester_import_stage_called(self):
+        """
+        Assuming the given package is correct (amend_package returns True),
+        check if the GovDataHarvester import stage is called.
+        """
+        harvesters = [
+            BerlinCKANHarvester,
+            RlpCKANHarvester,
+            HamburgCKANHarvester,
+            OpenNrwCKANHarvester,
+            RostockCKANHarvester,
+            DatahubCKANHarvester
+        ]
+
+        package = {u'type': u'datensatz',
+                   u'name': u'hbz_unioncatalog',  # such that datahub does not fail
+                   u'groups': [],
+                   u'tags': [],
+                   u'license_id': u'',
+                   u'resources': [],
+                   u'extras': {}
+        }
+
+        self.check_harvesters_migration(harvesters, package)
+
 
 class BerlinHarvesterTest(unittest.TestCase):
 
@@ -734,6 +966,7 @@ class BerlinHarvesterTest(unittest.TestCase):
         extras = Extras(dataset['extras'])
         self.assertTrue(extras.key('sector'))
         self.assertEquals('oeffentlich', extras.value('sector'))
+        self.assertTrue(valid)
 
         dataset = {
             'type': 'datensatz',
@@ -945,7 +1178,6 @@ class BerlinHarvesterTest(unittest.TestCase):
                    'version': '',
                    'license_id': '',
                    'type': None,
-                   'resources': [],
                    'tags': [],
                    'tracking_summary': {'total': 0, 'recent': 0},
                    'groups': ['arbeit', 'geo', 'umwelt', 'wohnen'],

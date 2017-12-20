@@ -3,37 +3,38 @@
 '''
 Module for harvesting CKAN instances into GovData.
 '''
+from codecs import BOM_UTF8
 import csv
 import datetime
-import time
 import json
 import logging
-import urllib2
 import re
+import time
+import urllib2
 import uuid
-from codecs import BOM_UTF8
-import ckanapi
-
-from ckanext.harvest.harvesters.ckanharvester import CKANHarvester
-from ckanext.harvest.harvesters.ckanharvester import ContentFetchError
-from ckanext.harvest.interfaces import IHarvester
-from ckanext.govdatade.harvesters.translator import translate_groups
-from ckanext.govdatade.config import config
-from ckanext.govdatade.extras import Extras
-from ckanext.govdatade.util import get_group_dict, remove_group_dict, fix_group_dict_list
-from simplejson.scanner import JSONDecodeError
 
 from ckan import model
 from ckan import plugins as p
+from ckan.logic import get_action
 from ckan.model import Session, PACKAGE_NAME_MAX_LENGTH
 from ckan.plugins.core import implements
+from ckanext.dcatde.migration import migration_functions
+from ckanext.govdatade.config import config
+from ckanext.govdatade.extras import Extras
+from ckanext.govdatade.harvesters.translator import translate_groups
+from ckanext.govdatade.util import get_group_dict, remove_group_dict, fix_group_dict_list
+from ckanext.harvest.harvesters.ckanharvester import CKANHarvester
+from ckanext.harvest.harvesters.ckanharvester import ContentFetchError
+from ckanext.harvest.interfaces import IHarvester
+from simplejson.scanner import JSONDecodeError
+
 
 LOGGER = logging.getLogger(__name__)
 
 
 NAME_RANDOM_STRING_LENGTH = 5
 NAME_DELETED_SUFFIX = "-deleted"
-NAME_MAX_LENGTH = PACKAGE_NAME_MAX_LENGTH-NAME_RANDOM_STRING_LENGTH-len(NAME_DELETED_SUFFIX)
+NAME_MAX_LENGTH = PACKAGE_NAME_MAX_LENGTH - NAME_RANDOM_STRING_LENGTH - len(NAME_DELETED_SUFFIX)
 
 
 class GovDataHarvester(CKANHarvester):
@@ -72,6 +73,11 @@ class GovDataHarvester(CKANHarvester):
 
         self.schema = json.loads(urllib2.urlopen(schema_url).read())
         self.govdata_groups = json.loads(urllib2.urlopen(groups_url).read())
+
+        self.migration_executor = migration_functions.MigrationFunctionExecutor(
+            config.get('ckanext.dcatde.urls.license_mapping'),
+            config.get('ckanext.dcatde.urls.category_mapping'))
+
 
     @classmethod
     def _get_rest_api_offset(cls, api_version):
@@ -115,6 +121,13 @@ class GovDataHarvester(CKANHarvester):
         extras = Extras(package_dict['extras'])
         extras.update(
             'metadata_original_portal',
+            self.portal,
+            True
+        )
+        # Store as extra Field which will not be migrated, so we can do what we want here.
+        # This field will also be set when implementing / adapting the RDF-Harvester for DCAT-AP.de
+        extras.update(
+            'metadata_harvested_portal',
             self.portal,
             True
         )
@@ -323,7 +336,7 @@ class GovDataHarvester(CKANHarvester):
 
                 while offset <= count:
                     query_object = {
-                        "fq": '+owner_org:"' + organization_id + '" +metadata_original_portal:"' + self.portal
+                        "fq": '+owner_org:"' + organization_id + '" +metadata_harvested_portal:"' + self.portal
                               + '" -type:"harvest"',
                         "rows": rows,
                         "start": offset
@@ -422,95 +435,36 @@ class GovDataHarvester(CKANHarvester):
             # TODO do I have to delete other dataset?
             return True
 
-    def verify_transformer(self, remote_dataset):
-        '''Based on metadata_transformer, this method checks, if a dataset should be imported.'''
-        # FIXME : Replace Remote CKAN api call with CKAN internal get_action
-        registry = ckanapi.RemoteCKAN(
-            config.get('ckanext.govdata.harvester.ckan.api.base.url')
-        )
-        remote_dataset = json.loads(remote_dataset)
+    def verify_transformer(self, harvest_object_content):
+        '''Compares new dataset with existing and checks, if a dataset should be imported.'''
+        context = self.build_context()
+
+        remote_dataset = json.loads(harvest_object_content)
         remote_dataset_extras = Extras(remote_dataset['extras'])
 
-        has_orig_id = remote_dataset_extras.key('metadata_original_id')
+        has_orig_id = remote_dataset_extras.key('alternate_identifier')
 
         if has_orig_id:
-            orig_id = remote_dataset_extras.value('metadata_original_id')
+            orig_id = remote_dataset_extras.value('alternate_identifier')
             try:
-                local_search_result = registry.action.package_search(
-                    q='metadata_original_id:"' + orig_id + '"')
+                data_dict = {"q": 'alternate_identifier:"' + orig_id + '"'}
+                local_search_result = get_action("package_search")(context, data_dict)
                 if local_search_result['count'] == 0:
-                    LOGGER.debug(
-                        'Did not find this original id. Import accepted.')
+                    LOGGER.debug('Did not find this original id. Import accepted.')
                     return True
                 if local_search_result['count'] == 1:
                     LOGGER.debug('Found duplicate entry')
                     local_dataset = local_search_result['results'][0]
-                    local_dataset_extras = Extras(local_dataset['extras'])
 
-                    if local_dataset_extras.key('metadata_transformer'):
-                        LOGGER.debug('Found metadata_transformer')
-                        local_transformer = None
-                        local_portal = None
-
-                        if local_dataset_extras.key('metadata_transformer'):
-                            LOGGER.debug('Found local metadata_transformer')
-                            transformer = local_dataset_extras.value('metadata_transformer')
-                            transformer.lstrip('"').rstrip('"')
-                            local_transformer = transformer
-
-                        if local_dataset_extras.key('metadata_original_portal'):
-                            LOGGER.debug('Found local metadata_original_portal')
-                            portal = local_dataset_extras.value('metadata_original_portal')
-                            portal.lstrip('"').rstrip('"')
-                            local_portal = portal
-
-                        if remote_dataset_extras.key('metadata_transformer'):
-                            remote_transformer = remote_dataset_extras.value('metadata_transformer')
-                            if remote_transformer == local_transformer or remote_transformer == 'harvester':
-                                # TODO this is temporary for gdi-de
-                                if local_portal == 'http://www.statistik.sachsen.de/':
-                                    LOGGER.debug('Found sachsen, accept import.')
-                                    return True
-                                LOGGER.debug(
-                                    'Remote metadata transformer equals local transformer -> check metadata_modified')
-                                # TODO check md_modified
-                                if 'metadata_modified' in remote_dataset:
-                                    return self.compare_metadata_modified(
-                                        remote_dataset['metadata_modified'],
-                                        local_dataset['metadata_modified']
-                                    )
-                                else:
-                                    LOGGER.debug(
-                                        'Remote metadata transformer equals local transformer, but remote dataset does not contain metadata_modified -> skipping')
-                                    return False
-                            elif remote_transformer == 'author' and local_transformer == 'harvester':
-                                LOGGER.debug(
-                                    'Remote metadata transformer equals author and local equals harvester -> importing.')
-                                return True
-                            else:
-                                LOGGER.debug(
-                                    'unknown value for remote metadata_transformer -> skipping.')
-                                return False
-                        else:
-                            LOGGER.debug(
-                                'remote does not contain metadata_transformer, fallback on metadata_modified')
-                            if 'metadata_modified' in remote_dataset:
-                                return self.compare_metadata_modified(remote_dataset['metadata_modified'],
-                                                                      local_dataset['metadata_modified'])
-                            else:
-                                LOGGER.debug(
-                                    'Remote metadata transformer equals local transformer, but remote dataset does not contain metadata_modified -> skipping')
-                                return False
+                    if 'metadata_modified' in remote_dataset:
+                        return self.compare_metadata_modified(
+                            remote_dataset['metadata_modified'],
+                            local_dataset['metadata_modified']
+                        )
                     else:
-                        if 'metadata_modified' in remote_dataset:
-                            return self.compare_metadata_modified(
-                                remote_dataset['metadata_modified'],
-                                local_dataset['metadata_modified']
-                            )
-                        else:
-                            LOGGER.debug(
-                                'Found duplicate entry but remote dataset does not contain metadata_modified -> skipping.')
-                            return False
+                        LOGGER.debug(
+                            'Found duplicate entry but remote dataset does not contain metadata_modified -> skipping.')
+                        return False
             except Exception as exception:
                 LOGGER.error(exception)
         else:
@@ -546,10 +500,29 @@ class GovDataHarvester(CKANHarvester):
 
         return super(GovDataHarvester, self).gather_stage(harvest_job)
 
+    def migrate_dataset(self, harvest_object):
+        ''' Migrate OGD to DCAT-AP.de'''
+        package = json.loads(harvest_object.content)
+        # Harvesters are skipped with a warning in the parent class, no migration needed
+        if package.get('type') == 'harvest':
+            return
+
+        self.migration_executor.apply_to(package)
+        # ensure that the package has the type 'dataset'.
+        # This property is ignored for existing datasets, but as they were migrated,
+        # the type is correct already.
+        package['type'] = 'dataset'
+
+        harvest_object.content = json.dumps(package)
+
     def import_stage(self, harvest_object):
+        self.migrate_dataset(harvest_object)
+
         to_import = self.verify_transformer(harvest_object.content)
         if to_import:
-            super(GovDataHarvester, self).import_stage(harvest_object)
+            return super(GovDataHarvester, self).import_stage(harvest_object)
+        else:
+            return 'unchanged'
 
 
 class RostockCKANHarvester(GovDataHarvester):
@@ -586,10 +559,10 @@ class RostockCKANHarvester(GovDataHarvester):
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
             LOGGER.error('Rostock: ' + str(error))
-            return
+            return False
 
         harvest_object.content = json.dumps(package)
-        super(RostockCKANHarvester, self).import_stage(harvest_object)
+        return super(RostockCKANHarvester, self).import_stage(harvest_object)
 
 
 class HamburgCKANHarvester(GovDataHarvester):
@@ -618,6 +591,8 @@ class HamburgCKANHarvester(GovDataHarvester):
         '''
         GovDataHarvester.amend_package(self, package)
 
+        context = self.build_context()
+
         extras = Extras(package['extras'])
 
         is_latest_version = None
@@ -631,13 +606,10 @@ class HamburgCKANHarvester(GovDataHarvester):
             remote_metadata_original_id = extras.value(
                 'metadata_original_id'
             )
-            # FIXME : Replace Remote CKAN api call with CKAN internal get_action
-            registry = ckanapi.RemoteCKAN(
-                config.get('ckanext.govdata.harvester.ckan.api.base.url')
-            )
-            local_search_result = registry.action.package_search(
-                q='metadata_original_id:"' + remote_metadata_original_id + '"'
-            )
+
+            # compare harvested OGD-Dataset with local DCAT-AP.de-Dataset
+            data_dict = {"q": 'alternate_identifier:"' + remote_metadata_original_id + '"'}
+            local_search_result = get_action("package_search")(context, data_dict)
 
             if local_search_result['count'] == 0:
                 LOGGER.debug(
@@ -702,9 +674,10 @@ class HamburgCKANHarvester(GovDataHarvester):
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
             LOGGER.error('Hamburg: ' + str(error))
-            return
+            return False
+
         harvest_object.content = json.dumps(package)
-        super(HamburgCKANHarvester, self).import_stage(harvest_object)
+        return super(HamburgCKANHarvester, self).import_stage(harvest_object)
 
 
 class BerlinCKANHarvester(GovDataHarvester):
@@ -766,15 +739,15 @@ class BerlinCKANHarvester(GovDataHarvester):
             valid = self.amend_package(package)
 
             if not valid:
-                return  # drop package
+                return 'unchanged'  # drop package
 
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
             LOGGER.error('Berlin: ' + str(error))
-            return
+            return False
 
         harvest_object.content = json.dumps(package)
-        super(BerlinCKANHarvester, self).import_stage(harvest_object)
+        return super(BerlinCKANHarvester, self).import_stage(harvest_object)
 
 
 class RlpCKANHarvester(GovDataHarvester):
@@ -871,10 +844,10 @@ class RlpCKANHarvester(GovDataHarvester):
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
             LOGGER.error('Rlp: ' + str(error))
-            return
+            return False
 
         harvest_object.content = json.dumps(package)
-        super(RlpCKANHarvester, self).import_stage(harvest_object)
+        return super(RlpCKANHarvester, self).import_stage(harvest_object)
 
 
 class DatahubCKANHarvester(GovDataHarvester):
@@ -919,7 +892,7 @@ class DatahubCKANHarvester(GovDataHarvester):
             package = json.loads(harvest_object.content)
             if package['name'] not in self.valid_packages:
                 LOGGER.info('Datahub: Package %s is not within whitelist, skipping...', package['name'])
-                return False
+                return 'unchanged'
             self.amend_package(package)
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
@@ -927,7 +900,7 @@ class DatahubCKANHarvester(GovDataHarvester):
             return False
 
         harvest_object.content = json.dumps(package)
-        super(DatahubCKANHarvester, self).import_stage(harvest_object)
+        return super(DatahubCKANHarvester, self).import_stage(harvest_object)
 
 
 class OpenNrwCKANHarvester(GovDataHarvester):
@@ -965,7 +938,7 @@ class OpenNrwCKANHarvester(GovDataHarvester):
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
             LOGGER.error('OpenNrw: ' + str(error))
-            return
+            return False
 
         harvest_object.content = json.dumps(package)
-        super(OpenNrwCKANHarvester, self).import_stage(harvest_object)
+        return super(OpenNrwCKANHarvester, self).import_stage(harvest_object)

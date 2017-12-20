@@ -52,7 +52,7 @@
         "portal_url": "http:\/\/www.statistik.sachsen.de\/"
     },
     "opennrw_harvester": {
-        "source_url": "https:\/\/ckan.www.open.nrw.de\/",
+        "source_url": "https:\/\/open.nrw\/",
         "portal_url": "http:\/\/open.nrw\/"
     }
 }

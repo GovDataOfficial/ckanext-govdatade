@@ -3,20 +3,21 @@
 '''
 Module for harvesting JSON based data into GovData.
 '''
-import urllib2
+import StringIO
 import json
 import logging
-import StringIO
+import urllib2
 import uuid
 import zipfile
 
-from ckanext.harvest.model import HarvestObject
 from ckanext.govdatade.config import config
 from ckanext.govdatade.extras import Extras
-from ckanext.govdatade.util import normalize_api_dataset
-from ckanext.govdatade.harvesters.translator import translate_groups
 from ckanext.govdatade.harvesters.ckanharvester import GovDataHarvester
-from ckanext.harvest.harvesters.ckanharvester import ContentFetchError
+from ckanext.govdatade.harvesters.translator import translate_groups
+from ckanext.govdatade.util import normalize_api_dataset
+from ckanext.harvest.harvesters.ckanharvester import ContentFetchError, ContentNotFoundError
+from ckanext.harvest.model import HarvestObject
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -280,10 +281,10 @@ class BremenCKANHarvester(JSONDumpBaseCKANHarvester):
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
             LOGGER.error('Bremen: ' + str(error))
-            return
+            return False
 
         harvest_object.content = json.dumps(package)
-        super(BremenCKANHarvester, self).import_stage(harvest_object)
+        return super(BremenCKANHarvester, self).import_stage(harvest_object)
 
     @classmethod
     def fix_terms_of_use(cls, extras):
@@ -339,10 +340,10 @@ class GdiHarvester(JSONZipBaseHarvester):
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
             LOGGER.error('Gdi: ' + str(error))
-            return
+            return False
 
         harvest_object.content = json.dumps(package)
-        super(GdiHarvester, self).import_stage(harvest_object)
+        return super(GdiHarvester, self).import_stage(harvest_object)
 
 
 class GenesisDestatisZipHarvester(JSONZipBaseHarvester):
@@ -377,10 +378,10 @@ class GenesisDestatisZipHarvester(JSONZipBaseHarvester):
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
             LOGGER.error('GenesisDestatis: ' + str(error))
-            return
+            return False
 
         harvest_object.content = json.dumps(package)
-        super(GenesisDestatisZipHarvester, self).import_stage(harvest_object)
+        return super(GenesisDestatisZipHarvester, self).import_stage(harvest_object)
 
 
 class RegionalstatistikZipHarvester(JSONZipBaseHarvester):
@@ -415,10 +416,10 @@ class RegionalstatistikZipHarvester(JSONZipBaseHarvester):
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
             LOGGER.error('Regionalstatistik: ' + str(error))
-            return
+            return False
 
         harvest_object.content = json.dumps(package)
-        super(RegionalstatistikZipHarvester, self).import_stage(harvest_object)
+        return super(RegionalstatistikZipHarvester, self).import_stage(harvest_object)
 
 
 class DestatisZipHarvester(JSONZipBaseHarvester):
@@ -453,10 +454,10 @@ class DestatisZipHarvester(JSONZipBaseHarvester):
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
             LOGGER.error('DestatisZip: ' + str(error))
-            return
+            return False
 
         harvest_object.content = json.dumps(package)
-        super(DestatisZipHarvester, self).import_stage(harvest_object)
+        return super(DestatisZipHarvester, self).import_stage(harvest_object)
 
 
 class SachsenZipHarvester(JSONZipBaseHarvester):
@@ -491,10 +492,10 @@ class SachsenZipHarvester(JSONZipBaseHarvester):
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
             LOGGER.error('SachsenZip: ' + str(error))
-            return
+            return False
 
         harvest_object.content = json.dumps(package)
-        super(SachsenZipHarvester, self).import_stage(harvest_object)
+        return super(SachsenZipHarvester, self).import_stage(harvest_object)
 
 
 class BmbfZipHarvester(JSONDumpBaseCKANHarvester):
@@ -530,10 +531,10 @@ class BmbfZipHarvester(JSONDumpBaseCKANHarvester):
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
             LOGGER.error('BmbfZip: ' + str(error))
-            return
+            return False
 
         harvest_object.content = json.dumps(package)
-        super(BmbfZipHarvester, self).import_stage(harvest_object)
+        return super(BmbfZipHarvester, self).import_stage(harvest_object)
 
 
 class BfjHarvester(JSONZipBaseHarvester):
@@ -571,7 +572,7 @@ class BfjHarvester(JSONZipBaseHarvester):
         except ValueError, error:
             self._save_object_error(str(error), harvest_object)
             LOGGER.error('Bfj: ' + str(error))
-            return
+            return False
 
         harvest_object.content = json.dumps(package)
-        super(BfjHarvester, self).import_stage(harvest_object)
+        return super(BfjHarvester, self).import_stage(harvest_object)

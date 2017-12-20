@@ -90,7 +90,8 @@ class Extras(object):
         if not self.key(key) and upsert is False:
             raise KeyError
 
-        if key in self.extras:
+        # update or insert (if selected) to dict
+        if key in self.extras or (upsert and isinstance(self.extras, dict)):
             self.extras[key] = value
             return True
 
@@ -101,7 +102,8 @@ class Extras(object):
                     extra['value'] = value
                     return True
 
-        if upsert:
+        # add key to list of dicts
+        if upsert and isinstance(self.extras, list):
             self.extras.append({'key': key, 'value': value})
             return True
 

@@ -1,7 +1,9 @@
-from setuptools import setup, find_packages
 import sys, os
 
-VERSION = '2.4.5'
+from setuptools import setup, find_packages
+
+
+VERSION = '3.0.0'
 
 with open('base-requirements.txt') as f:
     required = [line.strip() for line in f]
@@ -43,11 +45,9 @@ setup(
     bfj_harvester=ckanext.govdatade.harvesters.jsonharvester:BfjHarvester
 
     [paste.paster_command]
-    schemachecker = ckanext.govdatade.commands.schemachecker:SchemaChecker
-    linkchecker = ckanext.govdatade.commands.linkchecker:LinkChecker
-    report = ckanext.govdatade.commands.report:Report
     groupadder = ckanext.govdatade.commands.groupadder:GroupAdder
     purge = ckanext.govdatade.commands.purge:Purge
+    cleanupdb = ckanext.govdatade.commands.cleanupdb:CleanUpDb
 
     [nose.plugins]
     pylons = pylons.test:PylonsPlugin

@@ -4,6 +4,14 @@
 from ckanext.govdatade.extras import Extras
 from ckanext.govdatade.harvesters.jsonharvester import JSONZipBaseHarvester, JSONDumpBaseCKANHarvester
 from ckanext.govdatade.harvesters.jsonharvester import BremenCKANHarvester
+from ckanext.govdatade.harvesters.jsonharvester import GdiHarvester
+from ckanext.govdatade.harvesters.jsonharvester import GenesisDestatisZipHarvester
+from ckanext.govdatade.harvesters.jsonharvester import RegionalstatistikZipHarvester
+from ckanext.govdatade.harvesters.jsonharvester import DestatisZipHarvester
+from ckanext.govdatade.harvesters.jsonharvester import SachsenZipHarvester
+from ckanext.govdatade.harvesters.jsonharvester import BmbfZipHarvester
+from ckanext.govdatade.harvesters.jsonharvester import BfjHarvester
+from ckanext.govdatade.tests.test_harvester import HarvesterMigrationBaseTest
 from codecs import BOM_UTF8
 from mock import patch, Mock
 
@@ -30,6 +38,38 @@ def create_harvest_job(self, source_id, source_url):
 
 def mock_save(self):
     self.id = SQL_PACKAGE_ID
+
+
+class JsonHarvesterMigrationTest(HarvesterMigrationBaseTest):
+    """
+    Checks for all JSON and Zip harvesters if they migrate datasets when importing.
+    """
+
+    def test_govdataharvester_import_stage_called(self):
+        """
+        Assuming the given package is correct (amend_package returns True),
+        check if the GovDataHarvester import stage is called.
+        """
+        harvesters = [
+            BremenCKANHarvester,
+            GdiHarvester,
+            GenesisDestatisZipHarvester,
+            RegionalstatistikZipHarvester,
+            DestatisZipHarvester,
+            SachsenZipHarvester,
+            BmbfZipHarvester,
+            BfjHarvester
+        ]
+
+        package = {u'type': u'datensatz',
+                   u'groups': [],
+                   u'tags': [],
+                   u'license_id': u'',
+                   u'resources': [],
+                   u'extras': {}
+                   }
+
+        self.check_harvesters_migration(harvesters, package)
 
 
 class JSONZipBaseHarvesterTest(unittest.TestCase):
@@ -102,7 +142,7 @@ class JSONDumpBaseCKANHarvesterTest(unittest.TestCase):
         source_url = 'http://test.de/ckan-dump'
         harvest_job = create_harvest_job(self, source_id, source_url)
 
-        harvester.config = harvest_job.source.config # needed in self._get_content
+        harvester.config = harvest_job.source.config  # needed in self._get_content
         httpretty.HTTPretty.allow_net_connect = False
         org_id = '1234567890'
         package1 = {
