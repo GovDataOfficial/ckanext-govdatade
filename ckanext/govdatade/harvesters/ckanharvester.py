@@ -108,6 +108,13 @@ class GovDataHarvester(CKANHarvester):
         package.pop('relationships_as_subject', [])
         package.pop('relationships_as_object', [])
 
+        extras = Extras(package['extras'])
+        extras.update(
+            'guid',
+            package['id'],
+            True
+        )
+
         self.set_portal(package)
 
     @classmethod

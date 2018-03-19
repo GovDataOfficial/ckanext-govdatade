@@ -6,11 +6,14 @@ GovData.de specific CKAN extension for importing data from several remote source
 
 The GovData.de harvester is based on the CKAN extension [ckanext-harvest](https://github.com/ckan/ckanext-harvest).
 
+As harvested data is converted into DCAT format, the [ckanext-dcatde](https://github.com/GovDataOfficial/ckanext-dcatde) is required.
+*You do not have to install ckanext-harvest by yourself here, as it is a dependency of ckanext-dcat.*
+
 ## Getting Started
 
 If you are using Python virtual environment (virtualenv), activate it.
 
-Install a specific version of the CKAN extension ckanext-harvest. It is tested that ckanext-govdatade is working well with the release `v0.0.5` of ckanext-harvest.
+Install the current version of ckanext-dcatde.
 
 ```bash
 $ cd /path/to/virtualenv
@@ -23,24 +26,8 @@ $ python setup.py develop
 Add the following plugins to your CKAN configuration file:
 
 ```ini
-ckan.plugins = stats harvest ckan_harvester hamburg_harvester rlp_harvester berlin_harvester datahub_harvester rostock_harvester opennrw_harvester bremen_harvester gdi_harvester genesis_destatis_harvester destatis_harvester regionalstatistik_harvester sachsen_harvester bmbf_harvester bfj_harvester
+ckan.plugins = stats ckan_harvester hamburg_harvester rlp_harvester berlin_harvester datahub_harvester rostock_harvester opennrw_harvester bremen_harvester gdi_harvester genesis_destatis_harvester destatis_harvester regionalstatistik_harvester sachsen_harvester bmbf_harvester bfj_harvester
 ```
-
-Init the harvest tables in the database
-
-```bash
-$ path/to/virtualenv/bin/paster --plugin=ckanext-harvest harvester initdb --config=mysite.ini
-```
-
-Create the harvest user
-
-- create ckan harvest user
-
-    sudo -u ckan /path/to/virtualenv/bin/paster --plugin=ckan user add harvest password=harvest email=harvest@example.com --config=/etc/ckan/default/production.ini
-  
-- give sysadmin privileges to ckan harvest user
-
-    sudo -u ckan /path/to/virtualenv/bin/paster --plugin=ckan sysadmin add harvest --config=/etc/ckan/default/production.ini
 
 ## Creating ogd conform groups
 If you want to create the standard open data groups you can use the ckan command "groupadder" by following the instructions:

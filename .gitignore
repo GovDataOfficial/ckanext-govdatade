@@ -13,3 +13,5 @@ output/validation.html
 /.project
 /.pydevproject
 /.settings
+.idea
+bmi-govdata-ckanext-govdatade.iml

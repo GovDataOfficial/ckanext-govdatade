@@ -12,8 +12,8 @@ from ckanext.govdatade.harvesters.ckanharvester import HamburgCKANHarvester
 from ckanext.govdatade.harvesters.ckanharvester import OpenNrwCKANHarvester
 from ckanext.govdatade.harvesters.ckanharvester import RlpCKANHarvester
 from ckanext.govdatade.harvesters.ckanharvester import RostockCKANHarvester
-from mock import patch, Mock, ANY, call
 import httpretty
+from mock import patch, Mock, ANY, call
 
 
 class DummyClass:
@@ -149,7 +149,9 @@ class GovDataHarvesterTest(unittest.TestCase):
                 },
             }]
 
-        package = {'author': 'Hamburg',
+        package = {'id': 'package-id',
+                   'name': 'package-name',
+                   'author': 'Hamburg',
                    'author_email': 'hh@hamburg.de',
                    'groups': [{'name': 'transport_und_verkehr'}, {'id': 'geo'}],
                    'tags': tags_list_dict,
@@ -184,23 +186,29 @@ class GovDataHarvesterTest(unittest.TestCase):
         expected_extras = [
             {
                 'key': 'content_type',
-                'value': 'Kartenebene',
+                'value': 'Kartenebene'
             },
             {
                 'key': 'terms_of_use',
-                'value': {'license_id': 'cc-by'},
+                'value': {'license_id': 'cc-by'}
+            },
+            {
+                'key': 'guid',
+                'value': 'package-id'
             },
             {
                 'key': 'metadata_original_portal',
-                'value': 'http://hamburg-harvester.de',
+                'value': 'http://hamburg-harvester.de'
             },
             {
                 'key': 'metadata_harvested_portal',
-                'value': 'http://hamburg-harvester.de',
+                'value': 'http://hamburg-harvester.de'
             }]
 
+        self.assertEqual(package['id'], 'package-id')
+        self.assertEqual(package['name'], 'package-name')
         self.assertEqual(expected_tags_list_dict, package['tags'])
-        self.assertEqual(expected_extras, package['extras'])
+        self.assertListEqual(expected_extras, package['extras'])
         self.assertListEqual(
             package['groups'], [{'id': 'transport_und_verkehr', 'name': 'transport_und_verkehr'},
                                 {'id': 'geo'}])
@@ -214,7 +222,9 @@ class GovDataHarvesterTest(unittest.TestCase):
         harvester = HamburgCKANHarvester()
         harvester.portal = 'http://hamburg-harvester.de'
 
-        package = {'author': 'Hamburg',
+        package = {'id': 'package-id',
+                   'name': 'package-name',
+                   'author': 'Hamburg',
                    'author_email': 'hh@hamburg.de',
                    'license_id': 'cc-by',
                    'point_of_contact': None,
@@ -231,6 +241,10 @@ class GovDataHarvesterTest(unittest.TestCase):
         # verify
         expected_extras = [
             {
+                'key': 'guid',
+                'value': 'package-id'
+            },
+            {
                 'key': 'metadata_original_portal',
                 'value': 'http://hamburg-harvester.de',
             },
@@ -245,7 +259,7 @@ class GovDataHarvesterTest(unittest.TestCase):
         self.assertNotIn('tags', package)
         self.assertNotIn('groups', package)
         self.assertIn('extras', package)
-        self.assertEqual(package['extras'], expected_extras)
+        self.assertListEqual(package['extras'], expected_extras)
 
     def test_get_min_package_dict(self):
         # prepare
@@ -913,6 +927,8 @@ class BerlinHarvesterTest(unittest.TestCase):
         }]
 
         dataset = {
+            'id': 'package-id',
+            'name': 'package-name',
             'type': 'datensatz',
             'groups': [],
             'license_id': None,
@@ -932,6 +948,8 @@ class BerlinHarvesterTest(unittest.TestCase):
         harvester = BerlinCKANHarvester()
 
         dataset = {
+            'id': 'package-id',
+            'name': 'package-name',
             'type': 'datensatz',
             'groups': [],
             'license_id': None,
@@ -951,6 +969,8 @@ class BerlinHarvesterTest(unittest.TestCase):
         harvester = BerlinCKANHarvester()
 
         dataset = {
+            'id': 'package-id',
+            'name': 'package-name',
             'type': 'datensatz',
             'groups': [],
             'license_id': None,
@@ -969,6 +989,8 @@ class BerlinHarvesterTest(unittest.TestCase):
         self.assertTrue(valid)
 
         dataset = {
+            'id': 'package-id',
+            'name': 'package-name',
             'type': 'datensatz',
             'groups': [],
             'license_id': None,
@@ -988,6 +1010,8 @@ class BerlinHarvesterTest(unittest.TestCase):
         self.assertTrue(valid)
 
         dataset = {
+            'id': 'package-id',
+            'name': 'package-name',
             'type': 'datensatz',
             'groups': [],
             'license_id': None,
@@ -1007,6 +1031,8 @@ class BerlinHarvesterTest(unittest.TestCase):
         self.assertFalse(valid)
 
         dataset = {
+            'id': 'package-id',
+            'name': 'package-name',
             'type': 'datensatz',
             'groups': [],
             'license_id': None,
@@ -1030,6 +1056,8 @@ class BerlinHarvesterTest(unittest.TestCase):
         harvester = BerlinCKANHarvester()
 
         package = {
+            'id': 'package-id',
+            'name': 'package-name',
             'type': None,
             'groups': [],
             'license_id': None,
@@ -1045,6 +1073,8 @@ class BerlinHarvesterTest(unittest.TestCase):
         self.assertTrue(valid)
 
         package = {
+            'id': 'package-id',
+            'name': 'package-name',
             'type': 'datensatz',
             'groups': [],
             'license_id': None,
@@ -1060,6 +1090,8 @@ class BerlinHarvesterTest(unittest.TestCase):
         self.assertTrue(valid)
 
         package = {
+            'id': 'package-id',
+            'name': 'package-name',
             'type': 'dokument',
             'groups': [],
             'license_id': None,
@@ -1075,6 +1107,8 @@ class BerlinHarvesterTest(unittest.TestCase):
         self.assertTrue(valid)
 
         package = {
+            'id': 'package-id',
+            'name': 'package-name',
             'type': 'app',
             'groups': [],
             'license_id': None,
@@ -1090,6 +1124,8 @@ class BerlinHarvesterTest(unittest.TestCase):
         self.assertTrue(valid)
 
         package = {
+            'id': 'package-id',
+            'name': 'package-name',
             'type': 'garbage',
             'groups': [],
             'license_id': None,
@@ -1110,6 +1146,8 @@ class BerlinHarvesterTest(unittest.TestCase):
         default = 'http://datenregister.berlin.de'
 
         dataset = {
+            'id': 'package-id',
+            'name': 'package-name',
             'type': 'datensatz',
             'groups': [],
             'license_id': None,
@@ -1127,6 +1165,8 @@ class BerlinHarvesterTest(unittest.TestCase):
         self.assertTrue(valid)
 
         dataset = {
+            'id': 'package-id',
+            'name': 'package-name',
             'type': 'datensatz',
             'groups': [],
             'license_id': None,
@@ -1145,6 +1185,8 @@ class BerlinHarvesterTest(unittest.TestCase):
         self.assertTrue(valid)
 
         dataset = {
+            'id': 'package-id',
+            'name': 'package-name',
             'type': 'datensatz',
             'groups': [],
             'license_id': None,
@@ -1212,6 +1254,8 @@ class BerlinHarvesterTest(unittest.TestCase):
             {'id': 'geo', 'name': 'geo'},
             {'id': 'umwelt_klima', 'name': 'umwelt_klima'},
             {'id': 'infrastruktur_bauen_wohnen', 'name': 'infrastruktur_bauen_wohnen'}])
+        extras_actual = Extras(package['extras'])
+        self.assertEqual(extras_actual.value('guid'), 'f998d542-c652-467e-b31b-c3e5d0300589')
 
 class RlpHarvesterTest(unittest.TestCase):
 
@@ -1224,7 +1268,9 @@ class RlpHarvesterTest(unittest.TestCase):
                 'value': {'license_id': 'cc-by'},
             }]
 
-        package = {'author': 'RLP',
+        package = {'id': 'package-id',
+                   'name': 'package-name',
+                   'author': 'RLP',
                    'author_email': 'rlp@rlp.de',
                    'groups': [{'name': 'gdi-rp'}, {'name': 'geo'}],
                    'license_id': 'cc-by',
@@ -1237,9 +1283,12 @@ class RlpHarvesterTest(unittest.TestCase):
 
         harvester = RlpCKANHarvester()
         harvester.amend_package(package)
+
+        extras_actual = Extras(package['extras'])
         self.assertListEqual(package['groups'], [{'id': 'geo', 'name': 'geo'}])
         self.assertEqual(package['type'], 'datensatz')
         self.assertEqual(package['license_id'], 'cc-by')
+        self.assertEqual(extras_actual.value('guid'), 'package-id')
 
     def test_gdi_rlp_package_license_cc_by_nc(self):
         extras = [{
@@ -1250,7 +1299,9 @@ class RlpHarvesterTest(unittest.TestCase):
                 'value': {'license_id': 'cc-by'},
             }]
 
-        package = {'author': 'RLP',
+        package = {'id': 'package-id',
+                   'name': 'package-name',
+                   'author': 'RLP',
                    'author_email': 'rlp@rlp.de',
                    'groups': [{'name': 'gdi-rp'}, {'name': 'geo'}],
                    'license_id': 'cc-by-nc',
@@ -1263,9 +1314,12 @@ class RlpHarvesterTest(unittest.TestCase):
 
         harvester = RlpCKANHarvester()
         harvester.amend_package(package)
+
+        extras_actual = Extras(package['extras'])
         self.assertListEqual(package['groups'], [{'id': 'geo', 'name': 'geo'}])
         self.assertEqual(package['type'], 'dokument')
         self.assertEqual(package['license_id'], 'cc-nc')
+        self.assertEqual(extras_actual.value('guid'), 'package-id')
 
 class OpenNRWHarvesterTest(unittest.TestCase):
 
@@ -1289,7 +1343,9 @@ class OpenNRWHarvesterTest(unittest.TestCase):
             "name": "tag2"
         }]
 
-        package = {'author': 'OpenNRW',
+        package = {'id': 'package-id',
+                   'name': 'package-name',
+                   'author': 'OpenNRW',
                    'author_email': 'opennrw@open.nrw',
                    'groups': ['gesundheit', 'geo'],
                    'tags': tags_list_dict,
@@ -1318,6 +1374,7 @@ class OpenNRWHarvesterTest(unittest.TestCase):
         metadata_transformer = actual_harvest_object_content['extras']['metadata_transformer']
         self.assertEqual(metadata_transformer, '')
         mock_super_import_stage.assert_called_once_with(harvest_object)
+        self.assertEqual(actual_harvest_object_content['extras']['guid'], 'package-id')
 
 class HamburgHarvesterTest(unittest.TestCase):
 
@@ -1347,7 +1404,9 @@ class HamburgHarvesterTest(unittest.TestCase):
                 },
             }]
 
-        package = {'author': 'Hamburg',
+        package = {'id': 'package-id',
+                   'name': 'package-name',
+                   'author': 'Hamburg',
                    'author_email': 'hh@hamburg.de',
                    'groups': ['transport-und-verkehr'],
                    'tags': tags_list_dict,
@@ -1409,7 +1468,9 @@ class HamburgHarvesterTest(unittest.TestCase):
                 },
             }]
 
-        package = {'author': 'Hamburg',
+        package = {'id': 'package-id',
+                   'name': 'package-name',
+                   'author': 'Hamburg',
                    'author_email': 'hh@hamburg.de',
                    'groups': ['transport-und-verkehr'],
                    'tags': tags_list_dict,
@@ -1466,7 +1527,9 @@ class HamburgHarvesterTest(unittest.TestCase):
                 },
             }]
 
-        package = {'author': 'Hamburg',
+        package = {'id': 'package-id',
+                   'name': 'package-name',
+                   'author': 'Hamburg',
                    'author_email': 'hh@hamburg.de',
                    'groups': ['transport-und-verkehr'],
                    'tags': tags_list_dict,
@@ -1499,7 +1562,9 @@ class HamburgHarvesterTest(unittest.TestCase):
         harvester = HamburgCKANHarvester()
         default = 'http://suche.transparenz.hamburg.de/'
 
-        package = {'author': 'Hamburg',
+        package = {'id': 'package-id',
+                   'name': 'package-name',
+                   'author': 'Hamburg',
                    'author_email': 'hh@hamburg.de',
                    'groups': ['transport-und-verkehr'],
                    'tags': [],
@@ -1525,7 +1590,9 @@ class HamburgHarvesterTest(unittest.TestCase):
         harvester = HamburgCKANHarvester()
         default = 'http://suche.transparenz.hamburg.de/'
 
-        package = {'author':                   'Hamburg',
+        package = {'id': 'package-id',
+                   'name': 'package-name',
+                   'author':                   'Hamburg',
                    'author_email':             'hh@hamburg.de',
                    'groups':                   ['transport-und-verkehr'],
                    'tags':                   ['some tag', 'GovData'],
@@ -1540,6 +1607,7 @@ class HamburgHarvesterTest(unittest.TestCase):
         extras = Extras(package['extras'])
         self.assertTrue(extras.key('metadata_original_portal'))
         self.assertEquals(default, extras.value('metadata_original_portal'))
+        self.assertEquals(extras.value('guid'), 'package-id')
         self.assertTrue(valid)
 
     def test_amend_portal_metadata_original_portal_different(self):
@@ -1547,7 +1615,9 @@ class HamburgHarvesterTest(unittest.TestCase):
         harvester = HamburgCKANHarvester()
         default = 'http://suche.transparenz.hamburg.de/'
 
-        package = {'author':                   'Hamburg',
+        package = {'id': 'package-id',
+                   'name': 'package-name',
+                   'author':                   'Hamburg',
                    'author_email':             'hh@hamburg.de',
                    'groups':                   ['transport-und-verkehr'],
                    'tags':                   ['some tag', 'GovData'],

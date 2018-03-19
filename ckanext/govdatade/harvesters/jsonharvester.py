@@ -226,9 +226,9 @@ class BremenCKANHarvester(JSONDumpBaseCKANHarvester):
         - copy veroeffentlichende_stelle to maintainer
         - set spatial text
         '''
-        GovDataHarvester.amend_package(self, package)
-
         package['id'] = self.generate_id_from_name(package['name'])
+
+        GovDataHarvester.amend_package(self, package)
 
         # set correct groups
         if not package['groups']:
@@ -329,9 +329,9 @@ class GdiHarvester(JSONZipBaseHarvester):
         '''
         Amends the package data
         '''
-        GovDataHarvester.amend_package(self, package)
-
         package['id'] = self.generate_id_from_name(package['name'])
+
+        GovDataHarvester.amend_package(self, package)
 
     def import_stage(self, harvest_object):
         try:
@@ -367,9 +367,9 @@ class GenesisDestatisZipHarvester(JSONZipBaseHarvester):
         '''
         Amends the package data
         '''
-        GovDataHarvester.amend_package(self, package)
-
         package['id'] = self.generate_id_from_name(package['name'])
+
+        GovDataHarvester.amend_package(self, package)
 
     def import_stage(self, harvest_object):
         try:
@@ -405,9 +405,9 @@ class RegionalstatistikZipHarvester(JSONZipBaseHarvester):
         '''
         Amends the package data
         '''
-        GovDataHarvester.amend_package(self, package)
-
         package['id'] = self.generate_id_from_name(package['name'])
+
+        GovDataHarvester.amend_package(self, package)
 
     def import_stage(self, harvest_object):
         try:
@@ -443,9 +443,9 @@ class DestatisZipHarvester(JSONZipBaseHarvester):
         '''
         Amends the package data
         '''
-        GovDataHarvester.amend_package(self, package)
-
         package['id'] = self.generate_id_from_name(package['name'])
+
+        GovDataHarvester.amend_package(self, package)
 
     def import_stage(self, harvest_object):
         try:
@@ -481,9 +481,9 @@ class SachsenZipHarvester(JSONZipBaseHarvester):
         '''
         Amends the package data
         '''
-        GovDataHarvester.amend_package(self, package)
-
         package['id'] = self.generate_id_from_name(package['name'])
+
+        GovDataHarvester.amend_package(self, package)
 
     def import_stage(self, harvest_object):
         try:
@@ -520,9 +520,9 @@ class BmbfZipHarvester(JSONDumpBaseCKANHarvester):
         '''
         Amends the package data
         '''
-        GovDataHarvester.amend_package(self, package)
-
         package['id'] = self.generate_id_from_name(package['name'])
+
+        GovDataHarvester.amend_package(self, package)
 
     def import_stage(self, harvest_object):
         try:
@@ -558,9 +558,9 @@ class BfjHarvester(JSONZipBaseHarvester):
         '''
         Amends the package data
         '''
-        GovDataHarvester.amend_package(self, package)
-
         package['id'] = self.generate_id_from_name(package['name'])
+
+        GovDataHarvester.amend_package(self, package)
 
     def gather_stage(self, harvest_job):
         return super(BfjHarvester, self).gather_stage(harvest_job, 'latin9')

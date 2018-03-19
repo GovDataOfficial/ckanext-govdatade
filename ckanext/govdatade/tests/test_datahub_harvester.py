@@ -13,7 +13,8 @@ class DataHubIOHarvesterTest(unittest.TestCase):
         harvester = DatahubCKANHarvester()
         portal = 'http://datahub.io/'
         package = {
-            'name': 'Package Name',
+            'id': 'package-id',
+            'name': 'package-name',
             'description': '   ',
             'groups': [
                 {'name': 'bibliographic'},
@@ -28,6 +29,8 @@ class DataHubIOHarvesterTest(unittest.TestCase):
 
         extras = Extras(package['extras'])
 
+        self.assertEqual(package['id'], 'package-id')
+        self.assertEqual(package['name'], 'package-name')
         self.assertTrue(extras.key('metadata_original_portal'))
         self.assertEquals(portal, extras.value('metadata_original_portal'))
         self.assertTrue(valid)
@@ -38,3 +41,4 @@ class DataHubIOHarvesterTest(unittest.TestCase):
              {'id': 'bildung_wissenschaft', 'name': 'bildung_wissenschaft'}]
         )
         self.assertEqual(package['type'], 'datensatz')
+        self.assertEqual(extras.value('guid'), 'package-id')
