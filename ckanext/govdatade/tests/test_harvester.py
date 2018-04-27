@@ -47,18 +47,18 @@ class GovDataHarvesterTest(unittest.TestCase):
 
         # Return local dataset
         def mock_get_action_function(context, data_dict):
-            if data_dict["q"] == 'alternate_identifier:"hasone"':
+            if data_dict["q"] == 'identifier:"hasone"':
                 return {
                            'count': 1,
                            'results': [{
                                'metadata_modified': local_modified
                            }]
                        }
-            elif data_dict["q"] == 'alternate_identifier:"nodata"':
+            elif data_dict["q"] == 'identifier:"nodata"':
                 return {
                            'count': 0
                        }
-            elif data_dict["q"] == 'alternate_identifier:"newer"':
+            elif data_dict["q"] == 'identifier:"newer"':
                 return {
                            'count': 1,
                            'results': [{
@@ -72,7 +72,7 @@ class GovDataHarvesterTest(unittest.TestCase):
         remote_dataset = json.dumps({
                 'metadata_modified': remote_modified,
                 'extras': {
-                    'alternate_identifier': 'hasone'
+                    'identifier': 'hasone'
                 }
             })
 
@@ -83,7 +83,7 @@ class GovDataHarvesterTest(unittest.TestCase):
         remote_dataset = json.dumps({
                 'metadata_modified': remote_modified,
                 'extras': {
-                    'alternate_identifier': 'nodata'
+                    'identifier': 'nodata'
                 }
             })
 
@@ -102,7 +102,7 @@ class GovDataHarvesterTest(unittest.TestCase):
         # Prepare remote dataset without timestamp - reject
         remote_dataset = json.dumps({
                 'extras': {
-                    'alternate_identifier': 'hasone'
+                    'identifier': 'hasone'
                 }
             })
 
@@ -113,7 +113,7 @@ class GovDataHarvesterTest(unittest.TestCase):
         remote_dataset = json.dumps({
                 'metadata_modified': remote_modified,
                 'extras': {
-                    'alternate_identifier': 'newer'
+                    'identifier': 'newer'
                 }
             })
 

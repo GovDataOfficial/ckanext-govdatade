@@ -449,12 +449,12 @@ class GovDataHarvester(CKANHarvester):
         remote_dataset = json.loads(harvest_object_content)
         remote_dataset_extras = Extras(remote_dataset['extras'])
 
-        has_orig_id = remote_dataset_extras.key('alternate_identifier')
+        has_orig_id = remote_dataset_extras.key('identifier')
 
         if has_orig_id:
-            orig_id = remote_dataset_extras.value('alternate_identifier')
+            orig_id = remote_dataset_extras.value('identifier')
             try:
-                data_dict = {"q": 'alternate_identifier:"' + orig_id + '"'}
+                data_dict = {"q": 'identifier:"' + orig_id + '"'}
                 local_search_result = get_action("package_search")(context, data_dict)
                 if local_search_result['count'] == 0:
                     LOGGER.debug('Did not find this original id. Import accepted.')
@@ -615,7 +615,7 @@ class HamburgCKANHarvester(GovDataHarvester):
             )
 
             # compare harvested OGD-Dataset with local DCAT-AP.de-Dataset
-            data_dict = {"q": 'alternate_identifier:"' + remote_metadata_original_id + '"'}
+            data_dict = {"q": 'identifier:"' + remote_metadata_original_id + '"'}
             local_search_result = get_action("package_search")(context, data_dict)
 
             if local_search_result['count'] == 0:
