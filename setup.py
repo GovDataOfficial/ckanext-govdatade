@@ -3,7 +3,7 @@ import sys, os
 from setuptools import setup, find_packages
 
 
-VERSION = '3.1.1'
+VERSION = '3.1.3'
 
 with open('base-requirements.txt') as f:
     required = [line.strip() for line in f]
@@ -45,6 +45,8 @@ setup(
     bfj_harvester=ckanext.govdatade.harvesters.jsonharvester:BfjHarvester
 
     [paste.paster_command]
+    linkchecker = ckanext.govdatade.commands.linkchecker:LinkChecker
+    report = ckanext.govdatade.commands.report:Report
     groupadder = ckanext.govdatade.commands.groupadder:GroupAdder
     purge = ckanext.govdatade.commands.purge:Purge
     cleanupdb = ckanext.govdatade.commands.cleanupdb:CleanUpDb

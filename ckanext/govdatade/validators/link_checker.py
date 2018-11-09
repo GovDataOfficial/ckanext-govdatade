@@ -53,8 +53,8 @@ class LinkChecker(object):
         active_urls = []
 
         if 'extras' in dataset and \
-           'metadata_original_portal' in dataset['extras']:
-            portal = dataset['extras']['metadata_original_portal']
+           'metadata_harvested_portal' in dataset['extras']:
+            portal = dataset['extras']['metadata_harvested_portal']
 
         for resource in dataset['resources']:
             self.logger.debug('Resource URL: %s', resource['url'])
