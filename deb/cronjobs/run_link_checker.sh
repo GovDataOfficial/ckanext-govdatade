@@ -5,7 +5,7 @@ export https_proxy="{{ http_proxy }}"
 export no_proxy="{{ no_proxy }}"
 
 ip=$(echo $IP_MASTER | tr -d '\r')
-/sbin/ip -o -4 addr list eth0 | awk '{print $4}' | cut -d/ -f1 | grep "$ip"
+/sbin/ip -o -4 addr list scope global | awk '{print $4}' | cut -d/ -f1 | grep "$ip"
 
 if [ $? -eq 0 ]; then
   logger "Start GovData linkchecker"

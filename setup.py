@@ -2,8 +2,7 @@ import sys, os
 
 from setuptools import setup, find_packages
 
-
-VERSION = '3.2.0'
+VERSION = '3.3.0'
 
 with open('base-requirements.txt') as f:
     required = [line.strip() for line in f]

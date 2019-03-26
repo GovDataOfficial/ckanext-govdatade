@@ -11,7 +11,7 @@ from ckan.lib.base import model
 from ckan.lib.cli import CkanCommand
 import ckan.plugins.toolkit as tk
 
-DAYS_TO_SUBTRACT_DEFAULT = 180
+DAYS_TO_SUBTRACT_DEFAULT = 30
 DB_BLOCK_SIZE = 10000
 
 class CleanUpDb(CkanCommand):
@@ -20,7 +20,7 @@ class CleanUpDb(CkanCommand):
     Usage:
 
       activities [--older-than-days={days}]
-        - Deletes all activities older than the given {days}. Default is 180 days.
+        - Deletes all activities older than the given {days}. Default is 30 days.
 
         '''
 
@@ -52,8 +52,36 @@ class CleanUpDb(CkanCommand):
         if cmd == 'activities':
             self.check_option_days()
             self.delete_activities()
+        elif cmd == 'revisions':
+            self.delete_revisions()
         else:
             print 'Command %s not recognized' % cmd
+
+    def delete_revisions(self):
+        print 'INFO start deleting revisions...'
+        try:
+            # Query all resource revisions to delete
+            query_rr = model.Session.query(model.ResourceRevision)\
+                .filter_by(state=model.State.DELETED)
+
+            rows_to_delete_count = query_rr.count()
+            print "DEBUG resource revisions to delete count: %s " % rows_to_delete_count
+            rows_deleted = query_rr.delete()
+            print "INFO finished deleting resource revisions. count: %s " % rows_deleted
+
+            # Query all package extra revisions to delete
+            query_ex = model.Session.query(model.PackageExtraRevision)\
+                .filter_by(state=model.State.DELETED)
+
+            rows_to_delete_count = query_ex.count()
+            print "DEBUG package extra revisions to delete count: %s " % rows_to_delete_count
+            rows_deleted = query_ex.delete()
+            print "INFO finished deleting package extra revisions. count: %s " % rows_deleted
+
+            model.repo.commit()
+        except Exception as error:
+            model.Session.rollback()
+            print 'ERROR while deleting revisions! Details: %s' % str(error)
 
     def delete_activities(self):
         '''Deletes all dataset activities.'''
