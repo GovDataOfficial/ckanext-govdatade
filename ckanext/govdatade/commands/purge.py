@@ -13,6 +13,8 @@ from ckan.lib.cli import CkanCommand
 from ckan.lib.base import model
 from ckanext.govdatade.config import config
 
+LOGGER = logging.getLogger(__name__)
+
 
 class Purge(CkanCommand):
     '''Purges datasets.'''
@@ -21,7 +23,6 @@ class Purge(CkanCommand):
 
     def __init__(self, name):
         super(Purge, self).__init__(name)
-        self.logger = logging.getLogger('ckanext.govdatade.reports')
 
     def command(self):
         super(Purge, self)._load_config()
@@ -94,7 +95,7 @@ class Purge(CkanCommand):
                              self.format_date_string(time_in_seconds)])
                     csv.writer(logfile).writerow(line)
             except Exception as exception:
-                self.logger.warn(
+                LOGGER.warn(
                     'Could not write in automated deletion log file at %s: %s',
                     self.path_to_logfile, exception
                 )

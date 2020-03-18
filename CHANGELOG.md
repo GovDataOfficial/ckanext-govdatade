@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.7.0 2019-12-19
+
+* Rename environment names for internal ci/cd pipeline
+* Remove the restriction to a specific version of CKAN
+
+## v3.4.1 2019-05-16
+
+* Added `delete` paster command for deleting datasets by package_search filter params
+
 ## v3.3.0 2019-03-12
 
 * Improve filter query in `cleanupdb` command
