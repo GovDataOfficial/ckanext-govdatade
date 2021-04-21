@@ -55,10 +55,10 @@ def iterate_local_datasets(context):
     '''
     Iterates over the local datasets
     '''
-    for dataset_name in logic.get_action('package_list')(context, {}):
+    for dataset_name in logic.get_action('package_list')(context.copy(), {}):
         try:
             dataset = logic.get_action('package_show')(
-                context,
+                context.copy(),
                 {'id': dataset_name}
             )
             yield dataset

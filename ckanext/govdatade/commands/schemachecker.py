@@ -42,11 +42,11 @@ class SchemaChecker(CkanCommand):
 
     def __init__(self, name):
         super(SchemaChecker, self).__init__(name)
-        self.logger = logging.getLogger('ckanext.govdatade.reports')
+        self.logger = logging.getLogger('ckanext.govdatade.reports.commands.schemachecker')
 
     def get_dataset_count(self, ckan_api_client):
         '''
-        Return the amout of datasets
+        Return the amount of datasets
         '''
         self.logger.debug('Retrieving total number of datasets')
 

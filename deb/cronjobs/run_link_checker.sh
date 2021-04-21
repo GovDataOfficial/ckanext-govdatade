@@ -10,7 +10,11 @@ ip=$(echo $IP_MASTER | tr -d '\r')
 if [ $? -eq 0 ]; then
   logger "Start GovData linkchecker"
   /usr/lib/ckan/env/bin/paster --plugin=ckanext-govdatade linkchecker --config=/etc/ckan/default/production.ini
-  logger "Finished GovData linkchecker"
+  if [ $? -eq 0 ]; then
+    logger "Finished GovData linkchecker"
+  else
+    logger "Failed GovData linkchecker. Exited with Status Code $?."
+  fi
 else
   logger "Host isn't master host"
 fi

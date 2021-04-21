@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# -*- coding: utf8 -*-
 '''
 Module for checking link availability of CKAN resources.
 '''
@@ -23,7 +25,7 @@ class LinkChecker(object):
     def __init__(self, config):
 
         self.logger = logging.getLogger(
-            'ckanext.govdatade.commands.linkchecker'
+            'ckanext.govdatade.reports.validators.linkchecker'
         )
 
         self.redis_client = redis.StrictRedis(
@@ -47,59 +49,47 @@ class LinkChecker(object):
         Checking a single datasets URLs for availability
         '''
         dataset_id = dataset['id']
-        self.logger.debug('Data set id: %s', dataset_id)
+        self.logger.debug('Dataset id: %s', dataset_id)
         delete = False
-        portal = None
         active_urls = []
 
-        if 'extras' in dataset and \
-           'metadata_harvested_portal' in dataset['extras']:
-            portal = dataset['extras']['metadata_harvested_portal']
-
         for resource in dataset['resources']:
-            self.logger.debug('Resource URL: %s', resource['url'])
             url = resource['url']
+            self.logger.debug(u'Resource URL: %s', url)
             active_urls.append(url)
             try:
                 code = self.validate(url)
-                self.logger.debug('HTTP status code for %s: %s', url, code)
+                self.logger.debug(u'HTTP status code for %s: %s', url, code)
                 if self.is_available(code):
                     self.record_success(dataset_id, url)
                 else:
                     delete = delete or self.record_failure(
-                        dataset, url,
-                        code, portal
+                        dataset, url, code
                     )
             except requests.exceptions.Timeout:
                 delete = delete or self.record_failure(
-                    dataset, url,
-                    'Timeout', portal
+                    dataset, url, 'Timeout'
                 )
             except requests.exceptions.TooManyRedirects:
                 delete = delete or self.record_failure(
-                    dataset, url,
-                    'Redirect Loop', portal
+                    dataset, url, 'Redirect Loop'
                 )
             except requests.exceptions.SSLError:
                 delete = delete or self.record_failure(
-                    dataset, url,
-                    'SSL Error', portal
+                    dataset, url, 'SSL Error'
                 )
             except requests.exceptions.RequestException as request_error:
                 if request_error is None:
                     delete = delete or self.record_failure(
-                        dataset, url,
-                        'Unknown Request Error', portal
+                        dataset, url, 'Unknown Request Error'
                     )
                 else:
                     delete = delete or self.record_failure(
-                        dataset, url,
-                        str(request_error), portal
+                        dataset, url, str(request_error)
                     )
             except socket.timeout:
                 delete = delete or self.record_failure(
-                    dataset, url,
-                    'Timeout', portal
+                    dataset, url, 'Timeout'
                 )
             except ValueError as value_error:
                 self.logger.debug('Value error: %s', value_error)
@@ -108,8 +98,7 @@ class LinkChecker(object):
                 self.logger.debug('Unknown Error: %s', exception)
                 #In case of an unknown exception, change nothing
                 delete = delete or self.record_failure(
-                    dataset, url,
-                    'Unknown Error', portal
+                    dataset, url, 'Unknown Error'
                 )
         # Delete no more existent urls in dataset
         self.delete_deprecated_urls(dataset_id, active_urls)
@@ -130,8 +119,9 @@ class LinkChecker(object):
         Validates a given URL by making a request against it
         and returning it's HTTP status code.
         '''
-        self.logger.debug('URL: %s', url)
+        self.logger.debug(u'URL: %s', url)
 
+        self.logger.debug(u'Calling with HEAD method...')
         response = requests.head(
             url,
             allow_redirects=True,
@@ -147,6 +137,7 @@ class LinkChecker(object):
             return requests.codes.not_found
         # if method HEAD is not allowed try again with http method GET
         elif self.is_method_not_allowed(response.status_code):
+            self.logger.debug(u'HEAD method seems is not supported. Calling with GET method...')
             response = requests.get(
                 url,
                 allow_redirects=True,
@@ -192,16 +183,22 @@ class LinkChecker(object):
         '''
         return response_code >= 200 and response_code < 300
 
-    def record_failure(self, dataset, url, status, portal,
-                       date=datetime.now().date()):
+    def record_failure(self, dataset, url, status, date=datetime.now().date()):
         '''
         Adds a non available URL to the Redis dataset
         '''
+
+        self.logger.debug('Record failure with error (code) %s.', str(status))
+
+        portal = None
+        if 'extras' in dataset and \
+           'metadata_harvested_portal' in dataset['extras']:
+            portal = dataset['extras']['metadata_harvested_portal']
+
         dataset_id = dataset['id']
         dataset_name = dataset['name']
         dataset_maintainer_email = dataset['maintainer_email'] if 'maintainer_email' in dataset else ''
         dataset_maintainer = dataset['maintainer'] if 'maintainer' in dataset else ''
-        self.logger.debug(self.redis_client.get(dataset_id))
         record = unicode(self.redis_client.get(dataset_id))
         record = self.evaluate_record(record)
 

@@ -243,12 +243,12 @@ class TestLinkChecker(unittest.TestCase):
         url = 'https://www.example.com'
         status = 404
         portal = 'example.com'
-        dataset = {'id': '1', 'name': 'example'}
+        dataset = {'id': '1', 'name': 'example', 'extras': {'metadata_harvested_portal': portal}}
 
         date = datetime.datetime(2014, 1, 1)
         date_string = date.strftime("%Y-%m-%d")
 
-        self.link_checker.record_failure(dataset, url, status, portal, date)
+        self.link_checker.record_failure(dataset, url, status, date=date)
         actual_record = eval(self.link_checker.redis_client.get(dataset_id))
 
         expected_record = {
@@ -276,10 +276,10 @@ class TestLinkChecker(unittest.TestCase):
         date = datetime.datetime(2014, 1, 1)
         date_string = date.strftime("%Y-%m-%d")
 
-        self.link_checker.record_failure(dataset, url, status, None, date)
+        self.link_checker.record_failure(dataset, url, status, date=date)
 
         # Second time to test that the strikes counter has not incremented
-        self.link_checker.record_failure(dataset, url, status, None, date)
+        self.link_checker.record_failure(dataset, url, status, date=date)
 
         actual_record = eval(self.link_checker.redis_client.get(dataset_id))
 
@@ -297,15 +297,15 @@ class TestLinkChecker(unittest.TestCase):
         url = 'https://www.example.com'
         status = 404
         portal = 'example.com'
-        dataset = {'id': '1', 'name': 'example'}
+        dataset = {'id': '1', 'name': 'example', 'extras': {'metadata_harvested_portal': portal}}
 
         date = datetime.datetime(2014, 1, 1)
-        self.link_checker.record_failure(dataset, url, status, portal, date)
+        self.link_checker.record_failure(dataset, url, status, date=date)
 
         date = datetime.datetime(2014, 1, 2)
         date_string = date.strftime("%Y-%m-%d")
 
-        self.link_checker.record_failure(dataset, url, status, portal, date)
+        self.link_checker.record_failure(dataset, url, status, date=date)
 
         actual_record = eval(self.link_checker.redis_client.get(dataset_id))
 
@@ -330,18 +330,17 @@ class TestLinkChecker(unittest.TestCase):
         dataset_id = '1'
         url = 'https://www.example.com'
         status = 404
-        portal = None
         dataset = {'id': '1', 'name': 'example'}
 
         date = datetime.datetime(2014, 1, 1)
         date_string = date.strftime("%Y-%m-%d")
 
-        self.link_checker.record_failure(dataset, url, status, portal, date)
+        self.link_checker.record_failure(dataset, url, status, date=date)
 
         actual_record = eval(self.link_checker.redis_client.get(dataset_id))
 
         expected_record = {
-            'metadata_original_portal': portal,
+            'metadata_original_portal': None,
             'id': dataset_id,
             'maintainer': '',
             'maintainer_email': '',
@@ -368,13 +367,13 @@ class TestLinkChecker(unittest.TestCase):
         url1 = 'https://www.example.com/dataset/1'
         url2 = 'https://www.example.com/dataset/2'
         portal = 'example.com'
-        dataset = {'id': '1', 'name': 'example'}
+        dataset = {'id': '1', 'name': 'example', 'extras': {'metadata_harvested_portal': portal}}
 
         date = datetime.datetime(2014, 1, 1)
         date_string = date.strftime("%Y-%m-%d")
 
-        self.link_checker.record_failure(dataset, url1, 404, portal, date)
-        self.link_checker.record_failure(dataset, url2, 404, portal, date)
+        self.link_checker.record_failure(dataset, url1, 404, date=date)
+        self.link_checker.record_failure(dataset, url2, 404, date=date)
 
         actual_record = eval(self.link_checker.redis_client.get(dataset_id))
 

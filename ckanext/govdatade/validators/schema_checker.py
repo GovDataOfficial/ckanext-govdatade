@@ -22,7 +22,7 @@ class SchemaChecker(object):
             db=int(config.get('ckanext.govdata.validators.redis.database'))
         )
         self.logger = logging.getLogger(
-            'ckanext.govdatade.commands.schemachecker'
+            'ckanext.govdatade.reports.validators.schemachecker'
         )
 
     def process_record(self, dataset):

@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.9.2 2020-04-30
+
+* Linkchecker: Avoid re-using context when calling CKAN-Action multiple
+* Linkchecker: Add additional debug logging
+
 ## v3.7.0 2019-12-19
 
 * Rename environment names for internal ci/cd pipeline

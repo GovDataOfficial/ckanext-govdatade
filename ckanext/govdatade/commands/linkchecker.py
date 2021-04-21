@@ -35,7 +35,7 @@ class LinkChecker(CkanCommand):
 
     def __init__(self, name):
         super(LinkChecker, self).__init__(name)
-        self.logger = logging.getLogger('ckanext.govdatade.reports')
+        self.logger = logging.getLogger('ckanext.govdatade.reports.commands.linkchecker')
 
     def check_remote_host(self, endpoint):
         checker = link_checker.LinkChecker(config)
