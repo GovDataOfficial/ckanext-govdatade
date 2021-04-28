@@ -7,24 +7,21 @@ of data in the CKAN instance.
 import logging
 import os
 import smtplib
-
 from collections import defaultdict
 from email.mime.text import MIMEText
+
 from ckan.lib.cli import CkanCommand
+from jinja2 import Environment, FileSystemLoader
+from pylons import config
+from validate_email import validate_email
 
-from ckanext.govdatade.util import copy_report_vendor_files
-from ckanext.govdatade.util import copy_report_asset_files
-
-from ckanext.govdatade.util import generate_link_checker_data
-from ckanext.govdatade.util import generate_schema_checker_data
-from ckanext.govdatade.util import generate_general_data
 from ckanext.govdatade.util import amend_portal
 from ckanext.govdatade.util import boolize_config_value
-
-from ckanext.govdatade.config import config
-
-from jinja2 import Environment, FileSystemLoader
-from validate_email import validate_email
+from ckanext.govdatade.util import copy_report_asset_files
+from ckanext.govdatade.util import copy_report_vendor_files
+from ckanext.govdatade.util import generate_general_data
+from ckanext.govdatade.util import generate_link_checker_data
+from ckanext.govdatade.util import generate_schema_checker_data
 
 
 class Report(CkanCommand):

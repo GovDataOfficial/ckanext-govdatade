@@ -6,9 +6,9 @@ Paster command for cleaning the CKAN dataset, e.g. dataset activities.
 import sys
 import time
 
+import ckan.plugins.toolkit as tk
 from ckan.lib.base import model
 from ckan.lib.cli import CkanCommand
-import ckan.plugins.toolkit as tk
 
 ROWS = 100
 

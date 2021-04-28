@@ -1,8 +1,9 @@
-from ckanext.govdatade.validators.schema_checker import SchemaChecker
-from ckanext.govdatade.commands.schemachecker import SchemaChecker as SchemaCheckerCommand
-from ckanext.govdatade.config import config
-
 import unittest
+
+from pylons import config
+
+from ckanext.govdatade.commands.schemachecker import SchemaChecker as SchemaCheckerCommand
+from ckanext.govdatade.validators.schema_checker import SchemaChecker
 
 
 class TestSchemaChecker(unittest.TestCase):

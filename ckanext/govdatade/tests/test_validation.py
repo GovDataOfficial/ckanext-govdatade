@@ -1,11 +1,11 @@
 #!/usr/bin/python
 # -*- coding: utf8 -*-
-from nose.tools import raises
-from jsonschema import validate, ValidationError
-from ckanext.govdatade.config import config
-
 import json
 import urllib2
+
+from jsonschema import validate, ValidationError
+from nose.tools import raises
+from pylons import config
 
 
 class TestValidation:

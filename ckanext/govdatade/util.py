@@ -1,18 +1,18 @@
+import ast
 import json
 import logging
 import os
-import ast
-import ckan.logic as logic
-import ckanapi
-import distutils.dir_util
-
-from ckanext.govdatade.validators import link_checker
-from ckanext.govdatade.validators import schema_checker
-from datetime import datetime
 from collections import defaultdict
+from datetime import datetime
 from math import ceil
 
-from ckanext.govdatade.config import config
+import ckanapi
+import distutils.dir_util
+from pylons import config
+
+import ckan.logic as logic
+from ckanext.govdatade.validators import link_checker
+from ckanext.govdatade.validators import schema_checker
 
 LOGGER = logging.getLogger(__name__)
 

@@ -1,22 +1,24 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-import unittest
 import datetime
 import json
-from ckanext.govdatade.validators.link_checker import LinkChecker
-from ckanext.govdatade.validators.schema_checker import SchemaChecker
+import unittest
+
+from pylons import config
+
 from ckanext.govdatade.extras import Extras
 from ckanext.govdatade.util import amend_portal
 from ckanext.govdatade.util import boolize_config_value
+from ckanext.govdatade.util import fix_group_dict_list
 from ckanext.govdatade.util import generate_link_checker_data
 from ckanext.govdatade.util import generate_schema_checker_data
+from ckanext.govdatade.util import get_group_dict
 from ckanext.govdatade.util import normalize_action_dataset
 from ckanext.govdatade.util import normalize_api_dataset
-from ckanext.govdatade.util import get_group_dict
 from ckanext.govdatade.util import remove_group_dict
-from ckanext.govdatade.util import fix_group_dict_list
-from ckanext.govdatade.config import config
+from ckanext.govdatade.validators.link_checker import LinkChecker
+from ckanext.govdatade.validators.schema_checker import SchemaChecker
 
 
 class UtilTest(unittest.TestCase):

@@ -1,8 +1,9 @@
-from ckanext.govdatade.validators.link_checker import LinkChecker
-from ckanext.govdatade.commands.linkchecker import LinkChecker as LinkCheckerCommand
-from ckanext.govdatade.config import config
-
 import unittest
+
+from pylons import config
+
+from ckanext.govdatade.commands.linkchecker import LinkChecker as LinkCheckerCommand
+from ckanext.govdatade.validators.link_checker import LinkChecker
 
 
 class TestLinkChecker(unittest.TestCase):

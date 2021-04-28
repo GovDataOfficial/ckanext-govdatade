@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.11.0 2020-09-29
+
+* Removed the deprecated code for the OGD harvesters
+* Removed the deprecated `groupadder` command for OGD categories
+
 ## v3.9.2 2020-04-30
 
 * Linkchecker: Avoid re-using context when calling CKAN-Action multiple

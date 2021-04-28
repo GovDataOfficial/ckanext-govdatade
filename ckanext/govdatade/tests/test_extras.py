@@ -1,8 +1,10 @@
 #!/usr/bin/python
 # -*- coding: utf8 -*-
 import unittest
-from ckanext.govdatade.extras import Extras
+
 from nose.tools import raises
+
+from ckanext.govdatade.extras import Extras
 
 
 class TestExtras(unittest.TestCase):

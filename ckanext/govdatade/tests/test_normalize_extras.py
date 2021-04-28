@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from ckanext.govdatade.util import normalize_extras
-
 import json
+
+from ckanext.govdatade.util import normalize_extras
 
 
 def test_simple_json_object():
