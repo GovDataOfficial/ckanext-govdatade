@@ -1,31 +1,30 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from math import ceil
-from collections import defaultdict
-
-import json
-import urllib2
-import logging
 import ast
+import json
+import logging
 import os
+import urllib2
+from collections import defaultdict
+from math import ceil
+
 import ckanapi
+from jinja2 import Environment, FileSystemLoader
+from jsonschema.validators import Draft3Validator
+from pylons import config
 
 from ckan import model
-from ckan.model import Session
 from ckan.lib.cli import CkanCommand
 from ckan.logic import get_action
 from ckan.logic.schema import default_resource_schema
-
+from ckan.model import Session
 from ckanext.govdatade.extras import Extras
-from ckanext.govdatade.util import normalize_action_dataset
-from ckanext.govdatade.util import iterate_local_datasets
 from ckanext.govdatade.util import generate_schema_checker_data
-from ckanext.govdatade.validators import schema_checker
+from ckanext.govdatade.util import iterate_local_datasets
+from ckanext.govdatade.util import normalize_action_dataset
 from ckanext.govdatade.validators import link_checker
-from ckanext.govdatade.config import config
+from ckanext.govdatade.validators import schema_checker
 
-from jinja2 import Environment, FileSystemLoader
-from jsonschema.validators import Draft3Validator
 
 class SchemaChecker(CkanCommand):
 

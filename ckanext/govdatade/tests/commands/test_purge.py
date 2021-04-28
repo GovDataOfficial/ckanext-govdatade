@@ -1,8 +1,9 @@
-from ckanext.govdatade.commands.purge import Purge as PurgeCommand
-from mock import patch, Mock, ANY, call
-from ckan import model
-
 import unittest
+
+from mock import patch, Mock, ANY, call
+
+from ckan import model
+from ckanext.govdatade.commands.purge import Purge as PurgeCommand
 
 
 class DummyClass:

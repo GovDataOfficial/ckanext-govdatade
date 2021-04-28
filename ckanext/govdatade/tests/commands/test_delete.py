@@ -1,8 +1,8 @@
-from ckanext.govdatade.commands.delete import Delete as DeleteCommand
-from mock import patch, Mock, call
-from ckan import model
-
 import unittest
+
+from mock import patch, Mock, call
+
+from ckanext.govdatade.commands.delete import Delete as DeleteCommand
 
 
 class DummyClass:

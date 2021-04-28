@@ -9,9 +9,9 @@ import sys
 import time
 
 import ckan.plugins.toolkit as tk
-from ckan.lib.cli import CkanCommand
 from ckan.lib.base import model
-from ckanext.govdatade.config import config
+from ckan.lib.cli import CkanCommand
+from pylons import config
 
 LOGGER = logging.getLogger(__name__)
 

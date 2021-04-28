@@ -1,10 +1,11 @@
-from ckanext.govdatade.validators.link_checker import LinkChecker
-from mock import Mock
-from ckanext.govdatade.config import config
-
 import datetime
-import httpretty
 import unittest
+
+import httpretty
+from mock import Mock
+from pylons import config
+
+from ckanext.govdatade.validators.link_checker import LinkChecker
 
 
 class TestLinkChecker(unittest.TestCase):

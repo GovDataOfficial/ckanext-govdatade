@@ -3,13 +3,13 @@
 '''
 Paster command for cleaning the CKAN dataset, e.g. dataset activities.
 '''
-from datetime import datetime, timedelta
 import sys
 import time
+from datetime import datetime, timedelta
 
+import ckan.plugins.toolkit as tk
 from ckan.lib.base import model
 from ckan.lib.cli import CkanCommand
-import ckan.plugins.toolkit as tk
 
 DAYS_TO_SUBTRACT_DEFAULT = 30
 DB_BLOCK_SIZE = 10000

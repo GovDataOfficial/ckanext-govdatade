@@ -2,7 +2,7 @@ import sys, os
 
 from setuptools import setup, find_packages
 
-VERSION = '3.9.2'
+VERSION = '3.11.0'
 
 with open('base-requirements.txt') as f:
     required = [line.strip() for line in f]
@@ -28,25 +28,10 @@ setup(
   entry_points=\
     """
     [ckan.plugins]
-    hamburg_harvester=ckanext.govdatade.harvesters.ckanharvester:HamburgCKANHarvester
-    rlp_harvester=ckanext.govdatade.harvesters.ckanharvester:RlpCKANHarvester
-    berlin_harvester=ckanext.govdatade.harvesters.ckanharvester:BerlinCKANHarvester
-    datahub_harvester=ckanext.govdatade.harvesters.ckanharvester:DatahubCKANHarvester
-    rostock_harvester=ckanext.govdatade.harvesters.ckanharvester:RostockCKANHarvester
-    opennrw_harvester=ckanext.govdatade.harvesters.ckanharvester:OpenNrwCKANHarvester
-    bremen_harvester=ckanext.govdatade.harvesters.jsonharvester:BremenCKANHarvester
-    gdi_harvester=ckanext.govdatade.harvesters.jsonharvester:GdiHarvester
-    genesis_destatis_harvester=ckanext.govdatade.harvesters.jsonharvester:GenesisDestatisZipHarvester
-    destatis_harvester=ckanext.govdatade.harvesters.jsonharvester:DestatisZipHarvester
-    regionalstatistik_harvester=ckanext.govdatade.harvesters.jsonharvester:RegionalstatistikZipHarvester
-    sachsen_harvester=ckanext.govdatade.harvesters.jsonharvester:SachsenZipHarvester
-    bmbf_harvester=ckanext.govdatade.harvesters.jsonharvester:BmbfZipHarvester
-    bfj_harvester=ckanext.govdatade.harvesters.jsonharvester:BfjHarvester
 
     [paste.paster_command]
     linkchecker = ckanext.govdatade.commands.linkchecker:LinkChecker
     report = ckanext.govdatade.commands.report:Report
-    groupadder = ckanext.govdatade.commands.groupadder:GroupAdder
     purge = ckanext.govdatade.commands.purge:Purge
     cleanupdb = ckanext.govdatade.commands.cleanupdb:CleanUpDb
     delete = ckanext.govdatade.commands.delete:Delete

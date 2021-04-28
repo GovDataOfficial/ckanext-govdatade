@@ -4,6 +4,9 @@ import logging
 import ast
 import os
 
+from pylons import config
+from jinja2 import Environment, FileSystemLoader
+
 from ckan import model
 from ckan.model import Session
 from ckan.lib.cli import CkanCommand
@@ -16,9 +19,8 @@ from ckanext.govdatade.util import generate_link_checker_data
 from ckanext.govdatade.util import generate_schema_checker_data
 from ckanext.govdatade.validators import link_checker
 from ckanext.govdatade.validators import schema_checker
-from ckanext.govdatade.config import config
 
-from jinja2 import Environment, FileSystemLoader
+
 
 
 class LinkChecker(CkanCommand):
