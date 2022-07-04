@@ -69,7 +69,7 @@
                 {% for record in records %}
                   {% for url, analysis in record['urls'].iteritems() %}
                     <tr>
-                      <td><a href="{{ ckan_api_url }}/rest/dataset/{{ record['id'] }}" class="id" target="_blank">{{ record['id'] }}</a></td>
+                      <td><a href="{{ govdata_detail_url }}/{{ record['id'] }}" class="id" target="_blank">{{ record['id'] }}</a></td>
                       <td class="name">{{ record['name'] }}</td>
                       <td class="contact">{{ record['maintainer'] }}</td>
                       <td><a href="{{ url }}" class="url" target="_blank">{{ url }}</a></td>
