@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5.6 2021-09-30
+
+* Changes metadata export from daily to weekly
+
 ## v4.5.4 2021-09-10
 
 * Removed deprecated OGD schemachecker completely
