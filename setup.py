@@ -2,7 +2,7 @@ import sys, os
 
 from setuptools import setup, find_packages
 
-VERSION = '4.7.1'
+VERSION = '5.1.0'
 
 with open('base-requirements.txt') as f:
     required = [line.strip() for line in f]
@@ -28,6 +28,7 @@ setup(
   entry_points=\
     """
     [ckan.plugins]
+    govdatade=ckanext.govdatade.plugins:GovDataDePlugin
 
     [paste.paster_command]
     linkchecker = ckanext.govdatade.commands.linkchecker:LinkChecker

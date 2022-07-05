@@ -3,16 +3,15 @@ import json
 import unittest
 
 import httpretty
-from mock import Mock
-from pylons import config
-
+from ckan.plugins import toolkit as tk
 from ckanext.govdatade.validators.link_checker import LinkChecker
+from mock import Mock
 
 
 class TestLinkChecker(unittest.TestCase):
 
     def setUp(self):
-        self.link_checker = LinkChecker(config)
+        self.link_checker = LinkChecker(tk.config)
         self.link_checker.redis_client.flushdb()
 
     def tearDown(self):
@@ -44,139 +43,6 @@ class TestLinkChecker(unittest.TestCase):
         # python code should also not be accepted
         with self.assertRaises(Exception):
             self.link_checker.load_redis_data("content = str(3)")
-
-    def test_record_success(self):
-        dataset_id = '1'
-        url = 'https://www.example.com'
-
-        self.link_checker.record_success(dataset_id, url)
-
-        entry = self.link_checker.redis_client.get(dataset_id)
-        assert entry is None
-
-    def test_dataset_beginning_with_harvest_object_id_is_filtered(self):
-        self.link_checker.redis_client.set('harvest_object_id:b6d207e2-8e28-472a-95b0-2c79405ecc1f', '2015-12-02 14:15:34.793933')
-
-        records = self.link_checker.get_records()
-
-        self.assertEqual(records, [])
-
-        self.link_checker.redis_client.set('key_for_json_structure', '{"abc": "def"}')
-
-        records = self.link_checker.get_records()
-        self.assertTrue(len(records) == 1)
-
-    @httpretty.activate
-    def test_process_record(self):
-        url1 = 'http://example.com/dataset/1'
-        url2 = 'http://example.com/dataset/2'
-
-        httpretty.register_uri(httpretty.HEAD, url1, status=200)
-        httpretty.register_uri(httpretty.HEAD, url2, status=404)
-
-        dataset_id = '1'
-        dataset = {
-            'id': dataset_id,
-            'resources': [{'url': url1}, {'url': url2}],
-            'name': 'example'
-        }
-
-        self.link_checker.process_record(dataset)
-        record = json.loads(self.link_checker.redis_client.get(dataset_id))
-
-        self.assertNotIn(url1, record['urls'])
-        self.assertEqual(record['urls'][url2]['strikes'], 1)
-
-    @httpretty.activate
-    def test_process_record_deprecated_urls(self):
-        # prepare (1)
-        url1 = 'http://example.com/dataset/1'
-        url2 = 'http://example.com/dataset/2'
-
-        httpretty.register_uri(httpretty.HEAD, url1, status=404)
-        httpretty.register_uri(httpretty.HEAD, url2, status=404)
-
-        dataset_id = '1'
-        dataset = {
-            'id': dataset_id,
-            'resources': [{'url': url1}, {'url': url2}],
-            'name': 'example'
-        }
-
-        # execute (1)
-        self.link_checker.process_record(dataset)
-        
-        # verify (1)
-        record = json.loads(self.link_checker.redis_client.get(dataset_id))
-        self.assertEqual(record['urls'][url1]['strikes'], 1)
-        self.assertEqual(record['urls'][url1]['status'], 404)
-        self.assertEqual(record['urls'][url2]['strikes'], 1)
-        self.assertEqual(record['urls'][url2]['status'], 404)
-        
-        # prepare (2)
-        dataset.get('resources').pop(0) # removes entry with url1
-
-        # execute (1)
-        self.link_checker.process_record(dataset)
-        
-        # verify (1)
-        record = json.loads(self.link_checker.redis_client.get(dataset_id))
-        self.assertNotIn(url1, record['urls'])
-        # Comment within method record_failure in link_checker.py:
-        # Record and URL are known, increment Strike counter if 1+ day(s) have
-        # passed since the last check
-        self.assertEqual(record['urls'][url2]['strikes'], 1) # normally expected 2
-        self.assertEqual(record['urls'][url2]['status'], 404)
-
-    @httpretty.activate
-    def test_process_record_deprecated_urls_all_active(self):
-        # prepare
-        url1 = 'http://example.com/dataset/1'
-
-        httpretty.register_uri(httpretty.HEAD, url1, status=200)
-
-        dataset_id = '1'
-        dataset = {
-            'id': dataset_id,
-            'resources': [{'url': url1}],
-            'name': 'example'
-        }
-
-        # execute
-        self.link_checker.process_record(dataset)
-        
-        # verify
-        record = self.link_checker.redis_client.get(dataset_id)
-        self.assertIsNone(record)
-
-    @httpretty.activate
-    def test_process_record_deprecated_urls_all_active_with_existent_record(self):
-        # prepare
-        url1 = 'http://example.com/dataset/1'
-
-        httpretty.register_uri(httpretty.HEAD, url1, status=200)
-
-        dataset_id = '1'
-        dataset_name = 'example'
-        dataset = {
-            'id': dataset_id,
-            'resources': [{'url': url1}],
-            'name': dataset_name
-        }
-        
-        initial_record = {
-            'id': dataset_id,
-            'name': dataset_name,
-            'schema': {}
-        }
-        self.link_checker.redis_client.set(dataset_id, json.dumps(initial_record))
-
-        # execute
-        self.link_checker.process_record(dataset)
-        
-        # verify
-        record_actual = json.loads(self.link_checker.redis_client.get(dataset_id))
-        self.assertDictEqual(record_actual, initial_record)
 
     def test_record_success(self):
         dataset_id = '1'

@@ -5,7 +5,7 @@ ip=$(echo $IP_MASTER | tr -d '\r')
 
 if [ $? -eq 0 ]; then
   logger "Start GovData purge deleted datasets"
-  /usr/lib/ckan/env/bin/paster --plugin=ckanext-govdatade purge deleted --config=/etc/ckan/default/production.ini
+  /usr/lib/ckan/env/bin/ckan --config=/etc/ckan/default/production.ini purge deleted
   logger "Finished GovData purge deleted datasets"
 else
   logger "Host isn't master host"

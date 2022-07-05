@@ -8,7 +8,7 @@ import ast
 import json
 import logging
 import socket
-
+import six
 import redis
 import requests
 
@@ -32,7 +32,8 @@ class LinkChecker(object):
         self.redis_client = redis.StrictRedis(
             host=config.get('ckanext.govdata.validators.redis.host'),
             port=int(config.get('ckanext.govdata.validators.redis.port')),
-            db=int(config.get('ckanext.govdata.validators.redis.database'))
+            db=int(config.get('ckanext.govdata.validators.redis.database')),
+            decode_responses=True
         )
 
         timeout_config_string = config.get('ckanext.govdata.validators.linkchecker.timeout')
@@ -86,7 +87,7 @@ class LinkChecker(object):
                     )
                 else:
                     delete = delete or self.record_failure(
-                        dataset, url, str(request_error)
+                        dataset, url, six.text_type(request_error)
                     )
             except socket.timeout:
                 delete = delete or self.record_failure(
@@ -133,7 +134,7 @@ class LinkChecker(object):
 
         if self.has_redirection_to_404_page(response):
             self.logger.debug(
-                'Redirect ends in HTTP status code %s', str(requests.codes.not_found)
+                'Redirect ends in HTTP status code %s', six.text_type(requests.codes.not_found)
             )
             return requests.codes.not_found
         # if method HEAD is not allowed try again with http method GET
@@ -148,7 +149,7 @@ class LinkChecker(object):
             )
 
         self.logger.debug(
-            'HTTP status code: %s', str(response.status_code)
+            'HTTP status code: %s', six.text_type(response.status_code)
         )
         return response.status_code
 
@@ -201,7 +202,7 @@ class LinkChecker(object):
         Adds a non available URL to the Redis dataset
         '''
 
-        self.logger.debug('Record failure with error (code) %s.', str(status))
+        self.logger.debug('Record failure with error (code) %s.', six.text_type(status))
 
         portal = None
         if 'extras' in dataset and \

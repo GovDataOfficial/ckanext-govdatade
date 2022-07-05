@@ -2,7 +2,7 @@
 Module for accessing and mutating the extras.
 '''
 import logging
-
+import six
 LOGGER = logging.getLogger(__name__)
 
 
@@ -56,7 +56,7 @@ class Extras(object):
             for extra in self.extras:
                 if isinstance(extra, dict) and extra['key'] == key:
                     value = extra.get('value')
-                    if isinstance(value, str):
+                    if isinstance(value, six.string_types):
                         value = value.strip()
                     if disallow_empty and not value:
                         return False

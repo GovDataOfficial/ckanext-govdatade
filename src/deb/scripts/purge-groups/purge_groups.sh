@@ -6,6 +6,9 @@ if [ $# -ne 3 ]
         exit 1
 fi
 
+# activate python environment
+. /usr/lib/ckan/env/bin/activate
+
 while read -r line || [ -n "$line" ]
 do
     group_id=$(echo $line)
