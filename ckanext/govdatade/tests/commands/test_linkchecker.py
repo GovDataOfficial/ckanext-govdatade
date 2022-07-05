@@ -1,17 +1,15 @@
 import json
 import unittest
 
-from pylons import config
-
-from ckanext.govdatade.commands.linkchecker import LinkChecker as LinkCheckerCommand
+from ckan.plugins import toolkit as tk
+import ckanext.govdatade.commands.command_util as util
 from ckanext.govdatade.validators.link_checker import LinkChecker
 
 
 class TestLinkChecker(unittest.TestCase):
 
     def setUp(self):
-        self.linkchecker = LinkCheckerCommand(name = 'LinkCheckerTest')
-        self.link_checker = LinkChecker(config)
+        self.link_checker = LinkChecker(tk.config)
         self.link_checker.redis_client.flushdb()
 
     def tearDown(self):
@@ -31,7 +29,7 @@ class TestLinkChecker(unittest.TestCase):
         active_datasets = ['2', '3']
 
         # execute
-        self.linkchecker.delete_deprecated_datasets(active_datasets)
+        util.delete_deprecated_datasets(active_datasets)
 
         # verify
         record_actual = self.link_checker.redis_client.get(dataset_id)

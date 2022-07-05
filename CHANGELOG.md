@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.0 2022-04-07
+
+* Support for Python 3
+
 ## v4.7.1 2022-03-10
 
 * Updates Jinja2 to match version in ckan requirements

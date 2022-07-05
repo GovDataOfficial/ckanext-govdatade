@@ -5,8 +5,7 @@ import datetime
 import json
 import unittest
 
-from pylons import config
-
+from ckan.plugins import toolkit as tk
 from ckanext.govdatade.extras import Extras
 from ckanext.govdatade.util import amend_portal
 from ckanext.govdatade.util import fix_group_dict_list
@@ -21,7 +20,7 @@ from ckanext.govdatade.validators.link_checker import LinkChecker
 class UtilTest(unittest.TestCase):
 
     def setUp(self):
-        self.link_checker = LinkChecker(config)
+        self.link_checker = LinkChecker(tk.config)
         self.link_checker.redis_client.flushdb()
 
     def tearDown(self):
@@ -176,14 +175,14 @@ class UtilTest(unittest.TestCase):
         # Use extras to avoid dict key value order issues
         # when asserting
         extras = Extras(dataset['extras'])
-        self.assertEquals("{\"nuts\": \"DE\"}", extras.value('spatial_reference'))
+        self.assertEqual("{\"nuts\": \"DE\"}", extras.value('spatial_reference'))
 
         expected_terms_of_use = json.dumps({
             "license_id": "dl-de-by-2.0",
             "license_url": "some-url"
         })
 
-        self.assertEquals(expected_terms_of_use, extras.value('terms_of_use'))
+        self.assertEqual(expected_terms_of_use, extras.value('terms_of_use'))
 
         expected_contacts = json.dumps([{
             "url": "",
@@ -193,11 +192,11 @@ class UtilTest(unittest.TestCase):
             "name": "Statistisches Bundesamt",
         }])
 
-        self.assertEquals(expected_contacts, extras.value('contacts'))
+        self.assertEqual(expected_contacts, extras.value('contacts'))
         
-        self.assertEquals('2016-08-19T08:20:01.501641 ', extras.value('metadata_modified'))
+        self.assertEqual('2016-08-19T08:20:01.501641 ', extras.value('metadata_modified'))
         
-        self.assertEquals("bund", extras.value('geographical_granularity'))
+        self.assertEqual("bund", extras.value('geographical_granularity'))
 
     def test_generate_link_checker_data_empty_urls_dict(self):
         # prepare

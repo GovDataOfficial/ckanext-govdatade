@@ -6,13 +6,13 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime
-from math import ceil
-
 import distutils.dir_util
-import ckanapi
-from pylons import config
+from math import ceil
+import six
 
+import ckanapi
 import ckan.logic as logic
+from ckan.plugins import toolkit as tk
 from ckanext.govdatade.validators import link_checker
 
 LOGGER = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ def iterate_local_datasets(context):
             )
             yield dataset
         except logic.NotFound:
-            print dataset_name
+            print(u'Did not found dataset with ID {}'.format(dataset_name))
 
 
 def normalize_api_dataset(dataset):
@@ -89,9 +89,9 @@ def normalize_api_dataset(dataset):
 
     if 'extras' in dataset and isinstance(dataset['extras'], dict):
         extras = []
-        for key, value in dataset['extras'].iteritems():
+        for key, value in six.iteritems(dataset['extras']):
             value_string = value
-            if not isinstance(value, basestring):
+            if not isinstance(value, six.string_types):
                 value_string = json.dumps(value)
             extras.append({'key': key, 'value': value_string})
 
@@ -122,12 +122,12 @@ def normalize_extras(source):
     '''
     if isinstance(source, dict):
         result = {}
-        for key, value in source.iteritems():
+        for key, value in six.iteritems(source):
             result[key] = normalize_extras(value)
         return result
     elif isinstance(source, list):
         return [normalize_extras(item) for item in source]
-    elif isinstance(source, basestring) and is_valid(source):
+    elif isinstance(source, six.string_types) and is_valid(source):
         return normalize_extras(json.loads(source))
     return source
 
@@ -174,7 +174,7 @@ def copy_report_vendor_files():
     configured report directory.
     '''
 
-    target_dir = config.get('ckanext.govdata.validators.report.dir')
+    target_dir = tk.config.get('ckanext.govdata.validators.report.dir')
     target_dir = os.path.join(target_dir, 'assets')
     target_dir = os.path.abspath(target_dir)
 
@@ -195,7 +195,7 @@ def copy_report_asset_files():
     configured report directory.
     '''
 
-    target_dir = config.get('ckanext.govdata.validators.report.dir')
+    target_dir = tk.config.get('ckanext.govdata.validators.report.dir')
     target_dir = os.path.join(target_dir, 'assets')
     target_dir = os.path.abspath(target_dir)
 
@@ -221,7 +221,7 @@ def is_valid(source):
             return True
         if isinstance(value, list):
             return True
-        if isinstance(value, basestring):
+        if isinstance(value, six.string_types):
             return True
     except ValueError:
         pass
@@ -234,7 +234,7 @@ def generate_link_checker_data(data):
     goes into the Redis datasets.
     '''
 
-    checker = link_checker.LinkChecker(config)
+    checker = link_checker.LinkChecker(tk.config)
     redis = checker.redis_client
 
     if redis.get('general') is None:
@@ -260,7 +260,7 @@ def generate_link_checker_data(data):
         if checker.SCHEMA_RECORD_KEY not in record or not record[checker.SCHEMA_RECORD_KEY]:
             continue
 
-        for dummy_url, entry in record[checker.SCHEMA_RECORD_KEY].iteritems():
+        for dummy_url, entry in six.iteritems(record[checker.SCHEMA_RECORD_KEY]):
             if isinstance(entry['status'], int):
                 entry['status'] = 'HTTP %s' % entry['status']
 
@@ -271,10 +271,10 @@ def generate_link_checker_data(data):
             data['entries'][portal].append(record)
 
     lc_stats = data['linkchecker']
-    lc_stats['broken'] = sum(data['portals'].values())
+    lc_stats['broken'] = sum(six.itervalues(data['portals']))
     lc_stats['working'] = num_metadata - lc_stats['broken']
 
-    LOGGER.info('Link checker data: %s', data)
+    LOGGER.info('Link checker data: working: %s, broken %s', lc_stats['working'], lc_stats['broken'])
 
 
 def generate_general_data(data):
@@ -283,7 +283,7 @@ def generate_general_data(data):
     goes into the Redis storage.
     '''
 
-    checker = link_checker.LinkChecker(config)
+    checker = link_checker.LinkChecker(tk.config)
     redis = checker.redis_client
 
     if redis.get('general') is None:
@@ -307,7 +307,7 @@ def amend_portal(portal):
     '''
     Amend the given portal string.
     '''
-    portal = str(portal)
+    portal = six.text_type(portal)
 
     mapping = [(':', '-'), ('/', '-'), ('.', '-'),
                ('&', '-'), ('?', '-'), ('=', '-')]

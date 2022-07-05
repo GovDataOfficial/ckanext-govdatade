@@ -1,19 +1,11 @@
 # ckanext-govdatade
 
-GovData.de specific CKAN extension for importing data from several remote sources.
-
-### Dependencies
-
-The GovData.de harvester is based on the CKAN extension [ckanext-harvest](https://github.com/ckan/ckanext-harvest).
-
-As harvested data is converted into DCAT format, the [ckanext-dcatde](https://github.com/GovDataOfficial/ckanext-dcatde) is required.
-*You do not have to install ckanext-harvest by yourself here, as it is a dependency of ckanext-dcat.*
+GovData.de specific CKAN extension contains some helpful tools, e.g. a link checker for testing the
+availability of the provided links in the resources.
 
 ## Getting Started
 
 If you are using Python virtual environment (virtualenv), activate it.
-
-Install the current version of ckanext-dcatde.
 
 ```bash
 $ cd /path/to/virtualenv
@@ -26,20 +18,42 @@ $ python setup.py develop
 Add the following plugins to your CKAN configuration file:
 
 ```ini
-ckan.plugins = stats ckan_harvester hamburg_harvester rlp_harvester berlin_harvester datahub_harvester rostock_harvester opennrw_harvester bremen_harvester gdi_harvester genesis_destatis_harvester destatis_harvester regionalstatistik_harvester sachsen_harvester bmbf_harvester bfj_harvester
+ckan.plugins = govdatade
 ```
+## Command line interface
+The following operations can be run from the command line as described underneath:
 
-## Creating ogd conform groups
-If you want to create the standard open data groups you can use the ckan command "groupadder" by following the instructions:
+ON CKAN >= 2.9:
 
-    source /path/to/ckan/env/bin/activate
-    sudo -u ckan /path/to/ckan/env/bin/paster --plugin=ckanext-govdatade groupadder --config=/etc/ckan/default/production.ini
+    (pyenv) $ ckan --config=/etc/ckan/default/production.ini cleanupdb activities
+
+    (pyenv) $ ckan --config=/etc/ckan/default/production.ini delete datasets title:"to delete"
+
+    (pyenv) $ ckan --config=/etc/ckan/default/production.ini purge deleted
+
+    (pyenv) $ ckan --config=/etc/ckan/default/production.ini linkchecker
+
+    (pyenv) $ ckan --config=/etc/ckan/default/production.ini report
+
+ON CKAN <= 2.8:
+
+    (pyenv) $ paster --plugin=ckanext-govdatade cleanupdb activities --config=/etc/ckan/default/production.ini
+
+    (pyenv) $ paster --plugin=ckanext-govdatade delete datasets title:"to delete" --config=/etc/ckan/default/production.ini
+
+    (pyenv) $ paster --plugin=ckanext-govdatade purge deleted --config=/etc/ckan/default/production.ini
+
+    (pyenv) $ paster --plugin=ckanext-govdatade linkchecker --config=/etc/ckan/default/production.ini
+
+    (pyenv) $ paster --plugin=ckanext-govdatade report --config=/etc/ckan/default/production.ini
+
+The commands should be run with the pyenv activated and refer to your CKAN configuration file.
 
 ## Testing
 
-Unit tests are placed in the `ckanext/govdatade/tests` directory and can be run with the nose unit testing framework:
+Unit tests are placed in the `ckanext/govdatade/tests` directory and can be run with the pytest unit testing framework:
 
 ```bash
 $ cd /path/to/virtualenv/src/ckanext-govdatade
-$ nosetests
+$ pytest
 ```
