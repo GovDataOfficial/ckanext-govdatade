@@ -3,8 +3,8 @@
 '''
 Check if dataset links are available
 '''
+import json
 import logging
-import ast
 import os
 
 from pylons import config
@@ -140,7 +140,7 @@ class LinkChecker(CkanCommand):
 
             self.delete_deprecated_datasets(active_datasets)
             general = {'num_datasets': num_datasets}
-            validator.redis_client.set('general', general)
+            validator.redis_client.set('general', json.dumps(general))
             self.logger.info('Generated link check report data.')
         if len(self.args) > 0:
             subcommand = self.args[0]
@@ -175,17 +175,7 @@ class LinkChecker(CkanCommand):
             if redis_id not in dataset_ids:
                 record = redis_client.get(redis_id)
                 if (record is not None) and (redis_id != 'general'):
-                    record = self.evaluate_record(record)
+                    record = json.loads(record)
                     redis_client.delete(redis_id)
                     self.logger.info('Deleted deprecated broken links information for dataset %s from Redis',
                                      str(redis_id))
-
-    def evaluate_record(self, record):
-        '''
-        Evaluate the record
-        '''
-        try:
-            record = ast.literal_eval(unicode(record))
-        except ValueError:
-            self.logger.error('Redis dataset record evaluation error: %s', record)
-        return record

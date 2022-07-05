@@ -4,10 +4,10 @@
 Module for checking link availability of CKAN resources.
 '''
 from datetime import datetime
-
-import socket
+import json
 import logging
-import ast
+import socket
+
 import redis
 import requests
 
@@ -199,8 +199,9 @@ class LinkChecker(object):
         dataset_name = dataset['name']
         dataset_maintainer_email = dataset['maintainer_email'] if 'maintainer_email' in dataset else ''
         dataset_maintainer = dataset['maintainer'] if 'maintainer' in dataset else ''
-        record = unicode(self.redis_client.get(dataset_id))
-        record = self.evaluate_record(record)
+        record = self.redis_client.get(dataset_id)
+        if record:
+            record = json.loads(record)
 
         initial_url_record = {
             'status': status,
@@ -213,7 +214,7 @@ class LinkChecker(object):
             record['maintainer'] = dataset_maintainer
             record['maintainer_email'] = dataset_maintainer_email
             record['metadata_original_portal'] = portal
-            self.redis_client.set(dataset_id, record)
+            self.redis_client.set(dataset_id, json.dumps(record))
 
         # Record is not known yet
         if record is None:
@@ -227,17 +228,17 @@ class LinkChecker(object):
 
             record[self.SCHEMA_RECORD_KEY][url] = initial_url_record
             record['metadata_original_portal'] = portal
-            self.redis_client.set(dataset_id, record)
+            self.redis_client.set(dataset_id, json.dumps(record))
 
         # Record is known, but only with schema errors
         elif self.SCHEMA_RECORD_KEY not in record:
             record[self.SCHEMA_RECORD_KEY] = {}
             record[self.SCHEMA_RECORD_KEY][url] = initial_url_record
-            self.redis_client.set(dataset_id, record)
+            self.redis_client.set(dataset_id, json.dumps(record))
         # Record is known, but not that particular URL (Resource)
         elif url not in record[self.SCHEMA_RECORD_KEY]:
             record[self.SCHEMA_RECORD_KEY][url] = initial_url_record
-            self.redis_client.set(dataset_id, record)
+            self.redis_client.set(dataset_id, json.dumps(record))
 
         # Record and URL are known, increment Strike counter if 1+ day(s) have
         # passed since the last check
@@ -253,7 +254,7 @@ class LinkChecker(object):
                     url_entry['status'] = status
                     url_entry['strikes'] += 1
                     url_entry['date'] = date.strftime("%Y-%m-%d")
-                    self.redis_client.set(dataset_id, record)
+                    self.redis_client.set(dataset_id, json.dumps(record))
             except TypeError:
 
                 last_updated = last_updated.date()
@@ -262,7 +263,7 @@ class LinkChecker(object):
                     url_entry['status'] = status
                     url_entry['strikes'] += 1
                     url_entry['date'] = date.strftime("%Y-%m-%d")
-                    self.redis_client.set(dataset_id, record)
+                    self.redis_client.set(dataset_id, json.dumps(record))
 
         delete = record[self.SCHEMA_RECORD_KEY][url]['strikes'] >= 100
 
@@ -275,12 +276,12 @@ class LinkChecker(object):
         record = self.redis_client.get(dataset_id)
 
         if record is not None:
-            record = self.evaluate_record(record)
+            record = json.loads(record)
 
             # Remove URL entry due to a valid URL
             if record.get(self.SCHEMA_RECORD_KEY):
                 record[self.SCHEMA_RECORD_KEY].pop(url, None)
-                self.redis_client.set(dataset_id, record)
+                self.redis_client.set(dataset_id, json.dumps(record))
 
     def delete_deprecated_urls(self, dataset_id, active_urls):
         '''
@@ -289,7 +290,7 @@ class LinkChecker(object):
         record = self.redis_client.get(dataset_id)
 
         if record is not None:
-            record = self.evaluate_record(record)
+            record = json.loads(record)
 
             if self.SCHEMA_RECORD_KEY in record:
                 deprecated_urls = []
@@ -303,7 +304,7 @@ class LinkChecker(object):
                         'Delete deprecated url %s in dataset %s', to_remove, dataset_id)
                     record[self.SCHEMA_RECORD_KEY].pop(to_remove, None)
 
-                self.redis_client.set(dataset_id, record)
+                self.redis_client.set(dataset_id, json.dumps(record))
 
     def get_records(self):
         '''
@@ -314,20 +315,10 @@ class LinkChecker(object):
             if dataset_id == 'general' or dataset_id.startswith('harvest_object_id', 0):
                 continue
             try:
-                records.append(
-                    ast.literal_eval(self.redis_client.get(dataset_id))
-                )
+                record = self.redis_client.get(dataset_id)
+                if record:
+                    records.append(json.loads(record))
             except ValueError:
                 self.logger.error('Data set error: %s', dataset_id)
 
         return records
-
-    def evaluate_record(self, record):
-        '''
-        Evaluate the record
-        '''
-        try:
-            record = ast.literal_eval(unicode(record))
-        except ValueError:
-            self.logger.error('Redis dataset record evaluation error: %s', record)
-        return record

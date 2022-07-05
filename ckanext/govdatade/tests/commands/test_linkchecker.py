@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from pylons import config
@@ -25,7 +26,7 @@ class TestLinkChecker(unittest.TestCase):
             'name': dataset_name,
             'urls': {}
         }
-        self.link_checker.redis_client.set(dataset_id, initial_record)
+        self.link_checker.redis_client.set(dataset_id, json.dumps(initial_record))
 
         active_datasets = ['2', '3']
 
