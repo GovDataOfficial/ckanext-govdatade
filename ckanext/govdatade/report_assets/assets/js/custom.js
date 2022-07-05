@@ -61,11 +61,6 @@ $(document).ready(function() {
 
   pieChart = new PieChart("#linkchecker-pie-chart", data);
 
-  var data = [{type: "Metadaten unversehrt", count: nimbus.schemacheckerWorking},
-              {type: "Metadaten mit Schemafehlern", count: nimbus.schemacheckerBroken}];
-
-  pieChart = new PieChart("#schemachecker-pie-chart", data);
-
   // Add Sorting to tables
   $('table').each(function() {
     var tablecontainer = $(this).parent('div')[0];

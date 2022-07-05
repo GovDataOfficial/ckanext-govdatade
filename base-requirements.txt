@@ -3,4 +3,3 @@ jsonschema==2.3.0
 requests>=2.7,<3.0
 ckanapi>=3,<4
 strict-rfc3339==0.5
-validate_email==1.3

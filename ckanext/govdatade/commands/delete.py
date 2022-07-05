@@ -33,8 +33,13 @@ class Delete(CkanCommand):
                                'The default is True.')
 
         self.admin_user = None
+        self.package_search_filter_params = None
+        self.dry_run = None
 
     def command(self):
+        '''
+        Check command
+        '''
         super(Delete, self)._load_config()
 
         if len(self.args) < 2:
@@ -54,14 +59,15 @@ class Delete(CkanCommand):
             print 'Command %s not recognized' % cmd
 
     def _check_package_search_params(self, psfp_args):
+        ''' Check package search parameters '''
         if psfp_args:
             try:
                 # Basic validation of (multiple) params
-                for x in psfp_args:
-                    splitted = x.split(':', 1)
+                for psfp_arg in psfp_args:
+                    splitted = psfp_arg.split(':', 1)
                     if len(splitted) != 2:
                         raise ValueError
-                self.package_search_filter_params = ' '.join(str(x) for x in psfp_args)
+                self.package_search_filter_params = ' '.join(str(psfp_arg) for psfp_arg in psfp_args)
             except ValueError:
                 print 'ERROR: One or more package search filter params are not of the required' \
                     ' form \'fieldname:value\' !'
@@ -71,6 +77,7 @@ class Delete(CkanCommand):
             sys.exit(1)
 
     def _check_options(self):
+        ''' Check if options are valid '''
         self.dry_run = True
         if self.options.dry_run:
             if self.options.dry_run.lower() not in ('yes', 'true', 'no', 'false'):
@@ -99,8 +106,8 @@ class Delete(CkanCommand):
             offset += ROWS
 
             if count != 0:
-                for x in datasets:
-                    package_ids_found.append(x['id'])
+                for dataset in datasets:
+                    package_ids_found.append(dataset['id'])
 
         return set(package_ids_found)
 
@@ -127,7 +134,8 @@ class Delete(CkanCommand):
                              (package_id, str(checkpoint_end - checkpoint_start))
                     success_count += 1
                 except Exception as error:
-                    print 'ERROR: While deleting dataset with id %s. Details: %s' % (package_id, error.message)
+                    print 'ERROR: While deleting dataset with id %s. Details: %s' % \
+                        (package_id, error.message)
                     error_count += 1
 
             endtime = time.time()
@@ -139,4 +147,3 @@ class Delete(CkanCommand):
         '''Deletes the dataset with the given ID.'''
         context = {'user': self.admin_user['name']}
         tk.get_action('package_delete')(context, {'id': dataset_ref})
-

@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5.4 2021-09-10
+
+* Removed deprecated OGD schemachecker completely
+
 ## v4.4.2 2021-05-20
 
 * Fix dataset URLs in link checker reports and remove deprecated OGD schema check reporting

@@ -1,3 +1,6 @@
+'''
+Util methods
+'''
 import ast
 import json
 import logging
@@ -6,13 +9,12 @@ from collections import defaultdict
 from datetime import datetime
 from math import ceil
 
-import ckanapi
 import distutils.dir_util
+import ckanapi
 from pylons import config
 
 import ckan.logic as logic
 from ckanext.govdatade.validators import link_checker
-from ckanext.govdatade.validators import schema_checker
 
 LOGGER = logging.getLogger(__name__)
 
@@ -128,8 +130,7 @@ def normalize_extras(source):
         return [normalize_extras(item) for item in source]
     elif isinstance(source, basestring) and is_valid(source):
         return normalize_extras(json.loads(source))
-    else:
-        return source
+    return source
 
 def get_group_dict(group_name):
     '''
@@ -189,20 +190,6 @@ def copy_report_vendor_files():
     distutils.dir_util.copy_tree(vendor_dir, target_dir, update=1)
 
 
-def boolize_config_value(value):
-    '''
-    Turns a config value into a boolean
-    '''
-    true_values = ["true", "on", 1, "1", True]
-    value = str(value)
-    if value.lower() in true_values:
-        return True
-
-    false_values = ["false", "off", 0, "0", False]
-    if value.lower() in false_values:
-        return False
-
-
 def copy_report_asset_files():
     '''
     Copies the report asset files to the
@@ -238,7 +225,8 @@ def is_valid(source):
         if isinstance(value, basestring):
             return True
     except ValueError:
-        return False
+        pass
+    return False
 
 
 def generate_link_checker_data(data):
@@ -290,82 +278,14 @@ def generate_link_checker_data(data):
     LOGGER.info('Link checker data: %s', data)
 
 
-def generate_schema_checker_data(data):
-    '''
-    Generates the schema validation data that
-    goes into the Redis datasets.
-    '''
-
-    validator = schema_checker.SchemaChecker(config, schema=None)
-    redis = validator.redis_client
-
-    if redis.get('general') is None:
-        error_message = "Redis key '{redis_key}' not set".format(
-            redis_key='general'
-        )
-        LOGGER.error(error_message)
-        raise LookupError(error_message)
-
-    try:
-        num_metadata = ast.literal_eval(redis.get('general'))['num_datasets']
-    except ValueError as err:
-        error_message = 'Error retrieving number of datasets'
-        error_message = error_message + ' from Redis.'
-        LOGGER.error(error_message)
-        raise err
-
-    if validator.SCHEMA_RECORD_KEY not in data:
-        data[validator.SCHEMA_RECORD_KEY] = {}
-
-    if 'schemachecker' not in data:
-        data['schemachecker'] = {}
-
-    data[validator.SCHEMA_RECORD_KEY]['portal_statistic'] = defaultdict(int)
-    data[validator.SCHEMA_RECORD_KEY]['rule_statistic'] = defaultdict(int)
-    data[validator.SCHEMA_RECORD_KEY]['broken_rules'] = defaultdict(defaultdict)
-
-    portals = data[validator.SCHEMA_RECORD_KEY]['portal_statistic']
-    rules = data[validator.SCHEMA_RECORD_KEY]['rule_statistic']
-    broken_rules = data[validator.SCHEMA_RECORD_KEY]['broken_rules']
-
-    broken = 0
-
-    for record in validator.get_records():
-        dataset_id = record['id']
-        portal = record['metadata_original_portal']
-
-        if validator.SCHEMA_RECORD_KEY not in record or not record[validator.SCHEMA_RECORD_KEY]:
-            continue
-
-        portals[portal] += 1
-
-        if record[validator.SCHEMA_RECORD_KEY]:
-            broken += 1
-
-        broken_rules[portal][dataset_id] = {
-            'name': record['name'],
-            'maintainer': record['maintainer'],
-            'broken_rules': record[validator.SCHEMA_RECORD_KEY]
-        }
-
-        for broken_rule in record[validator.SCHEMA_RECORD_KEY]:
-            rules[broken_rule[0]] += 1
-
-    sc_stats = data['schemachecker']
-    sc_stats['broken'] = broken
-    sc_stats['working'] = num_metadata - sc_stats['broken']
-
-    LOGGER.info('Schema checker data: %s', data)
-
-
 def generate_general_data(data):
     '''
     Generates the general data that
     goes into the Redis storage.
     '''
 
-    validator = schema_checker.SchemaChecker(config, schema=None)
-    redis = validator.redis_client
+    checker = link_checker.LinkChecker(config)
+    redis = checker.redis_client
 
     if redis.get('general') is None:
         error_message = "Redis key '{redis_key}' not set".format(

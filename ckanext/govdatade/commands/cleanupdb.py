@@ -38,6 +38,9 @@ class CleanUpDb(CkanCommand):
         self.days_to_subtract = DAYS_TO_SUBTRACT_DEFAULT
 
     def command(self):
+        '''
+        Check command
+        '''
         super(CleanUpDb, self)._load_config()
 
         if len(self.args) == 0:
@@ -58,6 +61,7 @@ class CleanUpDb(CkanCommand):
             print 'Command %s not recognized' % cmd
 
     def delete_revisions(self):
+        ''' Start delete revisions '''
         print 'INFO start deleting revisions...'
         try:
             # Query all resource revisions to delete
@@ -129,6 +133,7 @@ class CleanUpDb(CkanCommand):
                  (self.format_date_string(endtime), success_count, str(endtime - starttime))
 
     def check_option_days(self):
+        ''' Check value for option days '''
         if self.options.days:
             try:
                 self.days_to_subtract = int(self.options.days)
@@ -158,7 +163,8 @@ class CleanUpDb(CkanCommand):
 
         if (success_count == rows_to_delete_count) or (success_count % DB_BLOCK_SIZE == 0):
             model.repo.commit()
-            print 'DEBUG Deleted %d of %d objects of type %s' % (success_count, rows_to_delete_count, object_type)
+            print 'DEBUG Deleted %d of %d objects of type %s' % \
+                (success_count, rows_to_delete_count, object_type)
         if success_count > rows_to_delete_count:
             error_msg = '''
                 Something went wrong! The maximum of %d rows to delete was exceeded! 
