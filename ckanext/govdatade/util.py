@@ -245,7 +245,7 @@ def generate_link_checker_data(data):
         raise LookupError(error_message)
 
     try:
-        num_metadata = json.loads(redis.get('general'))['num_datasets']
+        num_metadata = checker.load_redis_data(redis.get('general'))['num_datasets']
     except ValueError as err:
         error_message = 'Error retrieving number of datasets'
         error_message = error_message + ' from Redis.'
@@ -294,7 +294,7 @@ def generate_general_data(data):
         raise LookupError(error_message)
 
     try:
-        data['num_datasets'] = json.loads(redis.get('general'))['num_datasets']
+        data['num_datasets'] = checker.load_redis_data(redis.get('general'))['num_datasets']
         data['timestamp'] = datetime.today().strftime("%Y-%m-%d um %H:%M")
     except ValueError as err:
         error_message = 'Error retrieving number of datasets'

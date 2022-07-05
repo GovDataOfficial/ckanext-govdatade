@@ -134,9 +134,13 @@ class LinkChecker(CkanCommand):
             num_datasets = 0
             for dummy_index, dataset in enumerate(iterate_local_datasets(context)):
                 normalize_action_dataset(dataset)
-                validator.process_record(dataset)
-                num_datasets += 1
-                active_datasets.add(dataset['id'])
+                try:
+                    validator.process_record(dataset)
+                    num_datasets += 1
+                    active_datasets.add(dataset['id'])
+                except Exception as ex:
+                    self.logger.info('LinkChecker: Error while processing dataset %s. Details: %s',
+                                     str(dataset['id']), ex.message)
 
             self.delete_deprecated_datasets(active_datasets)
             general = {'num_datasets': num_datasets}
@@ -175,7 +179,6 @@ class LinkChecker(CkanCommand):
             if redis_id not in dataset_ids:
                 record = redis_client.get(redis_id)
                 if (record is not None) and (redis_id != 'general'):
-                    record = json.loads(record)
                     redis_client.delete(redis_id)
                     self.logger.info('Deleted deprecated broken links information for dataset %s from Redis',
                                      str(redis_id))
