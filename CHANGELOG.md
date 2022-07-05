@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.6.4 2021-12-21
+
+* Adds support for Redis 3.x
+* Fixes dev-requirements.txt: Broken version 1.7.0 of lazy-object-proxy was banned
+
 ## v4.5.6 2021-09-30
 
 * Changes metadata export from daily to weekly

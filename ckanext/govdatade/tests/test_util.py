@@ -202,7 +202,7 @@ class UtilTest(unittest.TestCase):
     def test_generate_link_checker_data_empty_urls_dict(self):
         # prepare
         general = {'num_datasets': 0}
-        self.link_checker.redis_client.set('general', general)
+        self.link_checker.redis_client.set('general', json.dumps(general))
 
         dataset_id = 1
         dataset_name = 'example'
@@ -213,7 +213,7 @@ class UtilTest(unittest.TestCase):
             'urls': {},
             'metadata_original_portal': portal
         }
-        self.link_checker.redis_client.set(dataset_id, initial_record)
+        self.link_checker.redis_client.set(dataset_id, json.dumps(initial_record))
         data = {}
 
         # execute
@@ -227,7 +227,7 @@ class UtilTest(unittest.TestCase):
     def test_generate_link_checker_data(self):
         # prepare
         general = {'num_datasets': 1}
-        self.link_checker.redis_client.set('general', general)
+        self.link_checker.redis_client.set('general', json.dumps(general))
 
         dataset_id = 1
         dataset_name = 'example'
@@ -248,7 +248,7 @@ class UtilTest(unittest.TestCase):
             },
            'metadata_original_portal': portal
         }
-        self.link_checker.redis_client.set(dataset_id, initial_record)
+        self.link_checker.redis_client.set(dataset_id, json.dumps(initial_record))
         data = {}
 
         # execute

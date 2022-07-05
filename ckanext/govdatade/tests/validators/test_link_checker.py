@@ -1,4 +1,5 @@
 import datetime
+import json
 import unittest
 
 import httpretty
@@ -55,14 +56,15 @@ class TestLinkChecker(unittest.TestCase):
         httpretty.register_uri(httpretty.HEAD, url1, status=200)
         httpretty.register_uri(httpretty.HEAD, url2, status=404)
 
+        dataset_id = '1'
         dataset = {
-            'id': 1,
+            'id': dataset_id,
             'resources': [{'url': url1}, {'url': url2}],
             'name': 'example'
         }
 
         self.link_checker.process_record(dataset)
-        record = eval(self.link_checker.redis_client.get(1))
+        record = json.loads(self.link_checker.redis_client.get(dataset_id))
 
         self.assertNotIn(url1, record['urls'])
         self.assertEqual(record['urls'][url2]['strikes'], 1)
@@ -76,8 +78,9 @@ class TestLinkChecker(unittest.TestCase):
         httpretty.register_uri(httpretty.HEAD, url1, status=404)
         httpretty.register_uri(httpretty.HEAD, url2, status=404)
 
+        dataset_id = '1'
         dataset = {
-            'id': 1,
+            'id': dataset_id,
             'resources': [{'url': url1}, {'url': url2}],
             'name': 'example'
         }
@@ -86,7 +89,7 @@ class TestLinkChecker(unittest.TestCase):
         self.link_checker.process_record(dataset)
         
         # verify (1)
-        record = eval(self.link_checker.redis_client.get(1))
+        record = json.loads(self.link_checker.redis_client.get(dataset_id))
         self.assertEqual(record['urls'][url1]['strikes'], 1)
         self.assertEqual(record['urls'][url1]['status'], 404)
         self.assertEqual(record['urls'][url2]['strikes'], 1)
@@ -99,7 +102,7 @@ class TestLinkChecker(unittest.TestCase):
         self.link_checker.process_record(dataset)
         
         # verify (1)
-        record = eval(self.link_checker.redis_client.get(1))
+        record = json.loads(self.link_checker.redis_client.get(dataset_id))
         self.assertNotIn(url1, record['urls'])
         # Comment within method record_failure in link_checker.py:
         # Record and URL are known, increment Strike counter if 1+ day(s) have
@@ -114,8 +117,9 @@ class TestLinkChecker(unittest.TestCase):
 
         httpretty.register_uri(httpretty.HEAD, url1, status=200)
 
+        dataset_id = '1'
         dataset = {
-            'id': 1,
+            'id': dataset_id,
             'resources': [{'url': url1}],
             'name': 'example'
         }
@@ -124,7 +128,7 @@ class TestLinkChecker(unittest.TestCase):
         self.link_checker.process_record(dataset)
         
         # verify
-        record = self.link_checker.redis_client.get(1)
+        record = self.link_checker.redis_client.get(dataset_id)
         self.assertIsNone(record)
 
     @httpretty.activate
@@ -134,7 +138,7 @@ class TestLinkChecker(unittest.TestCase):
 
         httpretty.register_uri(httpretty.HEAD, url1, status=200)
 
-        dataset_id = 1
+        dataset_id = '1'
         dataset_name = 'example'
         dataset = {
             'id': dataset_id,
@@ -147,13 +151,13 @@ class TestLinkChecker(unittest.TestCase):
             'name': dataset_name,
             'schema': {}
         }
-        self.link_checker.redis_client.set(dataset_id, initial_record)
+        self.link_checker.redis_client.set(dataset_id, json.dumps(initial_record))
 
         # execute
         self.link_checker.process_record(dataset)
         
         # verify
-        record_actual = eval(self.link_checker.redis_client.get(dataset_id))
+        record_actual = json.loads(self.link_checker.redis_client.get(dataset_id))
         self.assertDictEqual(record_actual, initial_record)
 
     @httpretty.activate
@@ -233,7 +237,7 @@ class TestLinkChecker(unittest.TestCase):
         url3 = 'http://example.com/dataset/3'
         httpretty.register_uri(httpretty.HEAD, url3, status=200)
 
-        dataset = {'id': 1,
+        dataset = {'id': '1',
                    'name': 'example',
                    'resources': [{'url': url1}, {'url': url2}, {'url': url3}]}
 
@@ -244,13 +248,13 @@ class TestLinkChecker(unittest.TestCase):
         url = 'https://www.example.com'
         status = 404
         portal = 'example.com'
-        dataset = {'id': '1', 'name': 'example', 'extras': {'metadata_harvested_portal': portal}}
+        dataset = {'id': dataset_id, 'name': 'example', 'extras': {'metadata_harvested_portal': portal}}
 
         date = datetime.datetime(2014, 1, 1)
         date_string = date.strftime("%Y-%m-%d")
 
         self.link_checker.record_failure(dataset, url, status, date=date)
-        actual_record = eval(self.link_checker.redis_client.get(dataset_id))
+        actual_record = json.loads(self.link_checker.redis_client.get(dataset_id))
 
         expected_record = {
             'id': dataset_id,
@@ -272,7 +276,7 @@ class TestLinkChecker(unittest.TestCase):
         dataset_id = '1'
         url = 'https://www.example.com'
         status = 404
-        dataset = {'id': '1', 'name': 'example'}
+        dataset = {'id': dataset_id, 'name': 'example'}
 
         date = datetime.datetime(2014, 1, 1)
         date_string = date.strftime("%Y-%m-%d")
@@ -282,7 +286,7 @@ class TestLinkChecker(unittest.TestCase):
         # Second time to test that the strikes counter has not incremented
         self.link_checker.record_failure(dataset, url, status, date=date)
 
-        actual_record = eval(self.link_checker.redis_client.get(dataset_id))
+        actual_record = json.loads(self.link_checker.redis_client.get(dataset_id))
 
         expected_record = {
             'metadata_original_portal': None, 'id': dataset_id, 'maintainer': '', 'maintainer_email': '',
@@ -298,7 +302,7 @@ class TestLinkChecker(unittest.TestCase):
         url = 'https://www.example.com'
         status = 404
         portal = 'example.com'
-        dataset = {'id': '1', 'name': 'example', 'extras': {'metadata_harvested_portal': portal}}
+        dataset = {'id': dataset_id, 'name': 'example', 'extras': {'metadata_harvested_portal': portal}}
 
         date = datetime.datetime(2014, 1, 1)
         self.link_checker.record_failure(dataset, url, status, date=date)
@@ -308,7 +312,7 @@ class TestLinkChecker(unittest.TestCase):
 
         self.link_checker.record_failure(dataset, url, status, date=date)
 
-        actual_record = eval(self.link_checker.redis_client.get(dataset_id))
+        actual_record = json.loads(self.link_checker.redis_client.get(dataset_id))
 
         expected_record = {
             'metadata_original_portal': portal,
@@ -331,14 +335,14 @@ class TestLinkChecker(unittest.TestCase):
         dataset_id = '1'
         url = 'https://www.example.com'
         status = 404
-        dataset = {'id': '1', 'name': 'example'}
+        dataset = {'id': dataset_id, 'name': 'example'}
 
         date = datetime.datetime(2014, 1, 1)
         date_string = date.strftime("%Y-%m-%d")
 
         self.link_checker.record_failure(dataset, url, status, date=date)
 
-        actual_record = eval(self.link_checker.redis_client.get(dataset_id))
+        actual_record = json.loads(self.link_checker.redis_client.get(dataset_id))
 
         expected_record = {
             'metadata_original_portal': None,
@@ -360,7 +364,7 @@ class TestLinkChecker(unittest.TestCase):
         self.link_checker.record_success(dataset_id, url)
         # Expected after record success
         expected_record.get('urls').pop(url, None)
-        actual_record = eval(self.link_checker.redis_client.get(dataset_id))
+        actual_record = json.loads(self.link_checker.redis_client.get(dataset_id))
         self.assertEqual(actual_record, expected_record)
 
     def test_url_success_after_failure(self):
@@ -368,7 +372,7 @@ class TestLinkChecker(unittest.TestCase):
         url1 = 'https://www.example.com/dataset/1'
         url2 = 'https://www.example.com/dataset/2'
         portal = 'example.com'
-        dataset = {'id': '1', 'name': 'example', 'extras': {'metadata_harvested_portal': portal}}
+        dataset = {'id': dataset_id, 'name': 'example', 'extras': {'metadata_harvested_portal': portal}}
 
         date = datetime.datetime(2014, 1, 1)
         date_string = date.strftime("%Y-%m-%d")
@@ -376,7 +380,7 @@ class TestLinkChecker(unittest.TestCase):
         self.link_checker.record_failure(dataset, url1, 404, date=date)
         self.link_checker.record_failure(dataset, url2, 404, date=date)
 
-        actual_record = eval(self.link_checker.redis_client.get(dataset_id))
+        actual_record = json.loads(self.link_checker.redis_client.get(dataset_id))
 
         expected_record = {
             'metadata_original_portal': portal,
@@ -401,7 +405,7 @@ class TestLinkChecker(unittest.TestCase):
         self.assertEqual(actual_record, expected_record)
         self.link_checker.record_success(dataset_id, url1)
 
-        actual_record = eval(self.link_checker.redis_client.get(dataset_id))
+        actual_record = json.loads(self.link_checker.redis_client.get(dataset_id))
 
         expected_record = {
             'metadata_original_portal': portal,
@@ -421,27 +425,29 @@ class TestLinkChecker(unittest.TestCase):
         self.assertEqual(actual_record, expected_record)
 
     def test_get_records_works_as_expected(self):
+        # (1)
         self.assertEqual(self.link_checker.get_records(), [])
 
+        # (2)
         self.link_checker.redis_client.keys = Mock(return_value=['general'])
         self.assertEqual(self.link_checker.get_records(), [])
         self.link_checker.redis_client.keys.assert_called_once_with('*')
 
+        # (3)
         self.link_checker.redis_client.keys = Mock(return_value=['general', 'abc'])
+        test_dict = {'metadata_original_portal': u'http://suche.transparenz.hamburg.de/'}
         self.link_checker.redis_client.get = Mock(
-            return_value="{'metadata_original_portal': u'http://suche.transparenz.hamburg.de/'}"
+            return_value=json.dumps(test_dict)
         )
 
-        expected_records = [
-            {'metadata_original_portal': u'http://suche.transparenz.hamburg.de/'}
-        ]
-
-        self.assertEqual(self.link_checker.get_records(), expected_records)
+        self.assertEqual(self.link_checker.get_records(), [test_dict])
         self.link_checker.redis_client.keys.assert_called_once_with('*')
         self.link_checker.redis_client.get.assert_called_once_with('abc')
 
+        # (4)
         self.link_checker.redis_client.keys = Mock(return_value=['general'])
+        self.link_checker.redis_client.get.reset_mock()
 
-        self.link_checker.get_records()
+        self.assertEqual(self.link_checker.get_records(), [])
         self.link_checker.redis_client.keys.assert_called_once_with('*')
-        self.link_checker.redis_client.get.assert_called_once_with('abc')
+        self.link_checker.redis_client.get.assert_not_called()
