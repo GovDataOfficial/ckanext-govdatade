@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.7.1 2022-03-10
+
+* Updates Jinja2 to match version in ckan requirements
+* Fix loading of old values from redis
+
 ## v4.6.4 2021-12-21
 
 * Adds support for Redis 3.x

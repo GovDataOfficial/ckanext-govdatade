@@ -4,6 +4,7 @@
 Module for checking link availability of CKAN resources.
 '''
 from datetime import datetime
+import ast
 import json
 import logging
 import socket
@@ -151,8 +152,20 @@ class LinkChecker(object):
         )
         return response.status_code
 
-    @classmethod
-    def has_redirection_to_404_page(cls, response):
+    @staticmethod
+    def load_redis_data(data):
+        '''
+        Helper to load data from redis. Supports either json-serialized strings (new data)
+        or direct string representations (legacy data)
+        '''
+        try:
+            return json.loads(data)
+        except ValueError:
+            # legacy data as direct string, fall back to literal evaluation. Can throw errors again.
+            return ast.literal_eval(data)
+
+    @staticmethod
+    def has_redirection_to_404_page(response):
         '''
         Utility method for determining if there's a redirection
         to a 404 page in the response.
@@ -165,8 +178,8 @@ class LinkChecker(object):
 
         return False
 
-    @classmethod
-    def is_method_not_allowed(cls, status_code):
+    @staticmethod
+    def is_method_not_allowed(status_code):
         '''
         Utility method for determining if the http method HEAD is not allowed by the server.
         Some server returns the http status 405 "method not allowed" (correct answer), but
@@ -175,8 +188,8 @@ class LinkChecker(object):
         return (status_code == requests.codes.method_not_allowed) \
             | (status_code == requests.codes.bad_request)
 
-    @classmethod
-    def is_available(cls, response_code):
+    @staticmethod
+    def is_available(response_code):
         '''
         Utility method for determining the availability from
         a HTTP status code
@@ -201,7 +214,7 @@ class LinkChecker(object):
         dataset_maintainer = dataset['maintainer'] if 'maintainer' in dataset else ''
         record = self.redis_client.get(dataset_id)
         if record:
-            record = json.loads(record)
+            record = self.load_redis_data(record)
 
         initial_url_record = {
             'status': status,
@@ -276,7 +289,7 @@ class LinkChecker(object):
         record = self.redis_client.get(dataset_id)
 
         if record is not None:
-            record = json.loads(record)
+            record = self.load_redis_data(record)
 
             # Remove URL entry due to a valid URL
             if record.get(self.SCHEMA_RECORD_KEY):
@@ -290,7 +303,7 @@ class LinkChecker(object):
         record = self.redis_client.get(dataset_id)
 
         if record is not None:
-            record = json.loads(record)
+            record = self.load_redis_data(record)
 
             if self.SCHEMA_RECORD_KEY in record:
                 deprecated_urls = []
@@ -317,7 +330,7 @@ class LinkChecker(object):
             try:
                 record = self.redis_client.get(dataset_id)
                 if record:
-                    records.append(json.loads(record))
+                    records.append(self.load_redis_data(record))
             except ValueError:
                 self.logger.error('Data set error: %s', dataset_id)
 

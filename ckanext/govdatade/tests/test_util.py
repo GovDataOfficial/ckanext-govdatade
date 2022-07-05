@@ -224,10 +224,14 @@ class UtilTest(unittest.TestCase):
         self.assertDictEqual(data['portals'], {})
         self.assertDictEqual(data['entries'], {})
 
-    def test_generate_link_checker_data(self):
+    def _run_test_generate_data(self, serializer_function):
+        """
+        Generalized helper to check data generation, supports a generic function to serialize
+        dicts into redis as an argument.
+        """
         # prepare
         general = {'num_datasets': 1}
-        self.link_checker.redis_client.set('general', json.dumps(general))
+        self.link_checker.redis_client.set('general', serializer_function(general))
 
         dataset_id = 1
         dataset_name = 'example'
@@ -248,7 +252,7 @@ class UtilTest(unittest.TestCase):
             },
            'metadata_original_portal': portal
         }
-        self.link_checker.redis_client.set(dataset_id, json.dumps(initial_record))
+        self.link_checker.redis_client.set(dataset_id, serializer_function(initial_record))
         data = {}
 
         # execute
@@ -271,3 +275,11 @@ class UtilTest(unittest.TestCase):
                 'name': 'example'
              }]
         )
+
+    def test_generate_link_checker_data(self):
+        # use JSON-serialized data by default
+        self._run_test_generate_data(json.dumps)
+
+    def test_link_checker_data_legacy(self):
+        # older entries are just direct strings of dicts, they should be supported as well
+        self._run_test_generate_data(str)
