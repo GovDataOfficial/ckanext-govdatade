@@ -23,8 +23,13 @@ class Purge(CkanCommand):
 
     def __init__(self, name):
         super(Purge, self).__init__(name)
+        self.admin_user = None
+        self.path_to_logfile = None
 
     def command(self):
+        '''
+        Check command
+        '''
         super(Purge, self)._load_config()
 
         if len(self.args) == 0:

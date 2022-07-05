@@ -6,17 +6,13 @@ of data in the CKAN instance.
 '''
 import logging
 import os
-import smtplib
 from collections import defaultdict
-from email.mime.text import MIMEText
 
 from ckan.lib.cli import CkanCommand
 from jinja2 import Environment, FileSystemLoader
 from pylons import config
-from validate_email import validate_email
 
 from ckanext.govdatade.util import amend_portal
-from ckanext.govdatade.util import boolize_config_value
 from ckanext.govdatade.util import copy_report_asset_files
 from ckanext.govdatade.util import copy_report_vendor_files
 from ckanext.govdatade.util import generate_general_data
@@ -48,168 +44,11 @@ class Report(CkanCommand):
         copy_report_vendor_files()
 
         templates = ['index.html', 'linkchecker.html']
-        templates = map(lambda name: name + '.jinja2', templates)
+        templates = [name + '.jinja2' for name in templates]
 
         for template_file in templates:
             rendered_template = self.render_template(template_file, data)
             self.write_validation_result(rendered_template, template_file)
-
-        self.send_email_notifications(data)
-
-    def send_email_notifications(self, data):
-        '''
-        Sends the broken link violation emails
-        '''
-        should_send_broken_link_notifications = boolize_config_value(
-            config.get(
-                'ckanext.govdata.send.broken.link.emails',
-                default=False
-            )
-        )
-
-        forced_email_address = config.get(
-            'ckanext.govdata.test.email.address',
-            default=None
-        )
-
-        if should_send_broken_link_notifications:
-            broken_link_emails = self.get_broken_links_emails(data)
-            if len(broken_link_emails) > 0:
-                self.send_broken_link_notifications(
-                    broken_link_emails,
-                    forced_email_address=forced_email_address
-                )
-        else:
-            info_message = "Sending broken link notification emails "
-            info_message += "is disabled."
-            self.logger.info(info_message)
-
-    def send_broken_link_notifications(self, emails_dict, forced_email_address=None):
-        '''
-        Sends the broken link notification emails
-        '''
-        smtp_server = config.get("smtp.server")
-        smtp_connection = smtplib.SMTP(smtp_server)
-
-        if forced_email_address:
-            info_message = "Broken link notification email "
-            info_message += "address is enforced. Set to %s."
-            self.logger.info(info_message, forced_email_address)
-
-        mail_sent_amount = 0
-
-        for email in emails_dict:
-            email_to_send_to = email["email_address"]
-
-            if forced_email_address and email_to_send_to:
-                email_to_send_to = forced_email_address
-                email["email_address"] = email_to_send_to
-
-            if validate_email(email_to_send_to):
-                message = self.get_mime_text_message_for_email(
-                    email,
-                    self.NOTIFICATION_TYPE_BROKEN_LINKS
-                )
-                smtp_connection.sendmail(
-                    message['From'],
-                    message['To'],
-                    message.as_string()
-                )
-                mail_sent_amount += 1
-
-        info_message = "Sent %s broken link notification mail(s)."
-        self.logger.info(info_message, mail_sent_amount)
-
-        smtp_connection.quit()
-
-    @classmethod
-    def get_mime_text_message_for_email(cls, email_dict, notification_type):
-        '''
-        Builds and returns a MIMEText object from the
-        given email dictionary and notification type
-        '''
-        message = MIMEText(
-            email_dict["email_content"].encode('utf-8'),
-            'plain',
-            'utf-8'
-        )
-
-        expected_notification_types = [
-            cls.NOTIFICATION_TYPE_BROKEN_LINKS,
-        ]
-
-        assert_message = "Given notification type has unexpected type"
-        assert notification_type in expected_notification_types, assert_message
-
-        if notification_type == cls.NOTIFICATION_TYPE_BROKEN_LINKS:
-            message["Subject"] = config.get("ckanext.govdata.send.broken.link.subject")
-            message["From"] = config.get("ckanext.govdata.send.broken.link.from")
-
-        message["To"] = email_dict["email_address"]
-
-        return message
-
-    @classmethod
-    def flatten_broken_urls(cls, data):
-        '''
-        Flattens the broken URLs dictionary to a
-        simple list
-        '''
-        urls = []
-        for url in data:
-            urls.append(url)
-
-        return urls
-
-    @classmethod
-    def cumulate_broken_url_mappings(cls, data):
-        '''
-        Cumulates the broken URL mappings from the given dictionary
-        '''
-        broken_url_mappings = {}
-        for k in data["portals"]:
-            entries = data["entries"][k]
-            for entry in entries:
-                if entry["maintainer_email"]:
-                    broken_url_mappings[k] = {
-                        "name": entry["name"],
-                        "email": entry["maintainer_email"],
-                        "urls": cls.flatten_broken_urls(entry["urls"])
-                    }
-
-        return broken_url_mappings
-
-
-    def get_broken_links_emails(self, data):
-        '''
-        Returns a list of broken link notification emails
-        '''
-
-        broken_url_mappings = self.cumulate_broken_url_mappings(data)
-
-        mail_template_file = 'broken-links.txt.jinja2'
-        mail_template_dir = os.path.dirname(__file__)
-        mail_template_dir = os.path.join(
-            mail_template_dir,
-            '../',
-            'mail_assets/templates'
-        )
-        mail_template_dir = os.path.abspath(mail_template_dir)
-
-        environment = Environment(loader=FileSystemLoader(mail_template_dir))
-        mail_template = environment.get_template(mail_template_file)
-
-        emails = []
-        for portal in broken_url_mappings:
-            emails.append({
-                "email_address": broken_url_mappings[portal]["email"],
-                "email_content": mail_template.render(
-                    broken_urls=broken_url_mappings[portal],
-                    portal=portal
-                )
-            })
-
-        return emails
 
     @classmethod
     def render_template(cls, template_file, data):

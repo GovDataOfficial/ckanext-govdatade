@@ -19,8 +19,8 @@ class LinkChecker(object):
     '''
 
     HEADERS = {'User-Agent': 'govdata-linkchecker'}
-    TIMEOUT = 15.0
     SCHEMA_RECORD_KEY = 'urls'
+    default_timeout = 15.0
 
     def __init__(self, config):
 
@@ -38,11 +38,11 @@ class LinkChecker(object):
         if timeout_config_string is not None:
             try:
                 timeout_config = int(timeout_config_string)
-                self.TIMEOUT = timeout_config
-                self.logger.debug('Using timeout (s): %s', self.TIMEOUT)
+                self.default_timeout = timeout_config
+                self.logger.debug('Using timeout (s): %s', self.default_timeout)
             except ValueError:
                 self.logger.debug('Timeout in configuration is not an integer: %s', timeout_config_string)
-                self.logger.debug('Using default timeout (s): %s', self.TIMEOUT)
+                self.logger.debug('Using default timeout (s): %s', self.default_timeout)
 
     def process_record(self, dataset):
         '''
@@ -125,7 +125,7 @@ class LinkChecker(object):
         response = requests.head(
             url,
             allow_redirects=True,
-            timeout=self.TIMEOUT,
+            timeout=self.default_timeout,
             headers=self.HEADERS,
             verify=False
         )
@@ -141,7 +141,7 @@ class LinkChecker(object):
             response = requests.get(
                 url,
                 allow_redirects=True,
-                timeout=self.TIMEOUT,
+                timeout=self.default_timeout,
                 headers=self.HEADERS,
                 verify=False
             )
@@ -323,6 +323,9 @@ class LinkChecker(object):
         return records
 
     def evaluate_record(self, record):
+        '''
+        Evaluate the record
+        '''
         try:
             record = ast.literal_eval(unicode(record))
         except ValueError:

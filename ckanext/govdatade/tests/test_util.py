@@ -9,45 +9,27 @@ from pylons import config
 
 from ckanext.govdatade.extras import Extras
 from ckanext.govdatade.util import amend_portal
-from ckanext.govdatade.util import boolize_config_value
 from ckanext.govdatade.util import fix_group_dict_list
 from ckanext.govdatade.util import generate_link_checker_data
-from ckanext.govdatade.util import generate_schema_checker_data
 from ckanext.govdatade.util import get_group_dict
 from ckanext.govdatade.util import normalize_action_dataset
 from ckanext.govdatade.util import normalize_api_dataset
 from ckanext.govdatade.util import remove_group_dict
 from ckanext.govdatade.validators.link_checker import LinkChecker
-from ckanext.govdatade.validators.schema_checker import SchemaChecker
 
 
 class UtilTest(unittest.TestCase):
 
     def setUp(self):
-        self.schema_checker = SchemaChecker(config)
-        self.schema_checker.redis_client.flushdb()
         self.link_checker = LinkChecker(config)
         self.link_checker.redis_client.flushdb()
 
     def tearDown(self):
-        self.schema_checker.redis_client.flushdb()
         self.link_checker.redis_client.flushdb()
 
     def test_amend_portal_works_as_expected(self):
         self.assertEqual('abc', amend_portal('abc'))
         self.assertEqual('A------Z', amend_portal('A:/.&?=Z'))
-
-    def test_boolize(self):
-        true_values = ["true", "on", 1, "1", "ON", "True", True]
-
-        for value in true_values:
-            self.assertTrue(boolize_config_value(value))
-
-        false_values = ["false", "off", 0, "0", "Off", "FALSE", False]
-
-
-        for value in false_values:
-            self.assertFalse(boolize_config_value(value))
 
     def test_get_group_dict_name_not_empty(self):
         # prepare
@@ -288,78 +270,4 @@ class UtilTest(unittest.TestCase):
                          },
                 'name': 'example'
              }]
-        )
-
-    def test_generate_schema_checker_data_empty_schema_dict(self):
-        # prepare
-        general = {'num_datasets': 0}
-        self.schema_checker.redis_client.set('general', general)
-
-        dataset_id = 1
-        dataset_name = 'example'
-        dataset_maintainer = 'maintainer1'
-        portal = 'portal1'
-        initial_record = {
-            'id': dataset_id,
-            'name': dataset_name,
-            'maintainer': dataset_maintainer,
-            'schema': {},
-            'metadata_original_portal': portal
-        }
-        self.schema_checker.redis_client.set(dataset_id, initial_record)
-        data = {}
-
-        # execute
-        generate_schema_checker_data(data)
-
-        # verify
-        self.assertDictEqual(data['schemachecker'], {'broken': 0, 'working': 0})
-        self.assertDictEqual(data['schema']['portal_statistic'], {})
-        self.assertDictEqual(data['schema']['rule_statistic'], {})
-        self.assertDictEqual(data['schema']['broken_rules'], {})
-
-    def test_generate_schema_checker_data(self):
-        # prepare
-        general = {'num_datasets': 1}
-        self.schema_checker.redis_client.set('general', general)
-
-        dataset_id = 1
-        dataset_name = 'example'
-        dataset_maintainer = 'maintainer1'
-        portal = 'portal1'
-        url = 'http://example.com/dataset/1'
-        status = 404
-        date = datetime.datetime(2014, 1, 1)
-        date_string = date.strftime("%Y-%m-%d")
-        broken_rules = [
-                ['rule1', 'message1'],
-                ['rule2', 'message2'],
-                ['rule3', 'message3']
-            ]
-        initial_record = {
-            'id': dataset_id,
-            'name': dataset_name,
-            'maintainer': dataset_maintainer,
-            'schema': broken_rules,
-            'metadata_original_portal': portal
-        }
-        self.schema_checker.redis_client.set(dataset_id, initial_record)
-        data = {}
-
-        # execute
-        generate_schema_checker_data(data)
-
-        # verify
-        self.assertDictEqual(data['schemachecker'], {'broken': 1, 'working': 0})
-        self.assertEqual(data['schema']['portal_statistic'][portal], 1)
-        self.assertEqual(data['schema']['rule_statistic'][broken_rules[0][0]], 1)
-        self.assertEqual(data['schema']['rule_statistic'][broken_rules[1][0]], 1)
-        self.assertEqual(data['schema']['rule_statistic'][broken_rules[2][0]], 1)
-        self.assertDictEqual(
-            data['schema']['broken_rules'][portal][dataset_id],
-            {
-             'name': dataset_name,
-             'maintainer': dataset_maintainer,
-             'broken_rules': broken_rules
-            }
         )

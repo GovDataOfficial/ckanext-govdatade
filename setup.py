@@ -2,7 +2,7 @@ import sys, os
 
 from setuptools import setup, find_packages
 
-VERSION = '4.4.2'
+VERSION = '4.5.4'
 
 with open('base-requirements.txt') as f:
     required = [line.strip() for line in f]

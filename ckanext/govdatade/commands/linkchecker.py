@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf8 -*-
+'''
+Check if dataset links are available
+'''
 import logging
 import ast
 import os
@@ -16,11 +19,7 @@ from ckanext.govdatade.util import normalize_action_dataset
 from ckanext.govdatade.util import iterate_local_datasets
 from ckanext.govdatade.util import iterate_remote_datasets
 from ckanext.govdatade.util import generate_link_checker_data
-from ckanext.govdatade.util import generate_schema_checker_data
 from ckanext.govdatade.validators import link_checker
-from ckanext.govdatade.validators import schema_checker
-
-
 
 
 class LinkChecker(CkanCommand):
@@ -40,6 +39,9 @@ class LinkChecker(CkanCommand):
         self.logger = logging.getLogger('ckanext.govdatade.reports.commands.linkchecker')
 
     def check_remote_host(self, endpoint):
+        '''
+        check if remote host is available
+        '''
         checker = link_checker.LinkChecker(config)
 
         num_urls = 0
@@ -63,9 +65,6 @@ class LinkChecker(CkanCommand):
         self.logger.info('Generating dead link report.')
         data = {}
         generate_link_checker_data(data)
-        # also required as schemachecker is required in
-        # the layout.html.jinja2 template
-        generate_schema_checker_data(data)
 
         self.logger.info('Report data %s', data)
         self.write_report(self.render_template(data))
@@ -108,6 +107,9 @@ class LinkChecker(CkanCommand):
 
     @classmethod
     def create_context(cls):
+        '''
+        Create context
+        '''
         return {'model': model,
                 'session': Session,
                 'user': u'harvest',
@@ -174,20 +176,14 @@ class LinkChecker(CkanCommand):
                 record = redis_client.get(redis_id)
                 if (record is not None) and (redis_id != 'general'):
                     record = self.evaluate_record(record)
-                    info_message = None
-                    if schema_checker.SchemaChecker.SCHEMA_RECORD_KEY not in record:
-                        redis_client.delete(redis_id)
-                        info_message = 'Deleted deprecated dataset for dataset'
-                    else:
-                        return_value = record.pop(validator.SCHEMA_RECORD_KEY, None)
-                        if return_value is not None:
-                            redis_client.set(redis_id, record)
-                            info_message = 'Deleted deprecated broken links information for dataset'
-
-                    if info_message is not None:
-                        self.logger.info(info_message + ' %s from Redis', str(redis_id))
+                    redis_client.delete(redis_id)
+                    self.logger.info('Deleted deprecated broken links information for dataset %s from Redis',
+                                     str(redis_id))
 
     def evaluate_record(self, record):
+        '''
+        Evaluate the record
+        '''
         try:
             record = ast.literal_eval(unicode(record))
         except ValueError:
