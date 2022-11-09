@@ -15,7 +15,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from ckan import model
 from ckan.plugins import toolkit as tk
-import ckanext.govdatade.util as util
+from ckanext.govdatade import util
 from ckanext.govdatade.validators import link_checker
 
 DB_BLOCK_SIZE = 10000

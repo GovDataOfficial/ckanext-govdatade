@@ -10,15 +10,15 @@ import os
 from ckan.plugins.toolkit import CkanCommand
 from ckan.plugins import toolkit as tk
 
-import ckanext.govdatade.commands.command_util as command_util
+from ckanext.govdatade.commands import command_util
 
 
 class Report(CkanCommand):
-    # pylint: disable=R0903
+    # pylint: disable=too-few-public-methods
 
     '''Generates metadata quality report based on Redis data.'''
 
-    summary = __doc__.split('\n')[0]
+    summary = __doc__.split('\n', maxsplit=1)[0]
 
     def __init__(self, name):
         super(Report, self).__init__(name)

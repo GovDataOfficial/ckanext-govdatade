@@ -11,13 +11,13 @@ from ckan import model
 from ckan.logic import get_action
 from ckan.plugins.toolkit import CkanCommand
 from ckan.plugins import toolkit as tk
-import ckanext.govdatade.commands.command_util as command_util
-import ckanext.govdatade.util as util
+from ckanext.govdatade.commands import command_util
+from ckanext.govdatade import util
 from ckanext.govdatade.validators import link_checker
 
 
 class LinkChecker(CkanCommand):
-    # pylint: disable=R0903
+    # pylint: disable=too-few-public-methods
 
     '''Checks the availability of the dataset's URLs
 
@@ -26,7 +26,7 @@ class LinkChecker(CkanCommand):
     remote <host-name>             Checks links for datasets of a given remote host
     '''
 
-    summary = __doc__.split('\n')[0]
+    summary = __doc__.split('\n', maxsplit=1)[0]
     usage = __doc__
 
     def __init__(self, name):

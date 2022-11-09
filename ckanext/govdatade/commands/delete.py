@@ -14,7 +14,7 @@ ROWS = 100
 
 
 class Delete(CkanCommand):
-    # pylint: disable=R0903
+    # pylint: disable=too-few-public-methods
     '''Deletes objects in the CKAN database, e.g. datasets.
 
     Usage:
@@ -24,7 +24,7 @@ class Delete(CkanCommand):
 
         '''
 
-    summary = __doc__.split('\n')[0]
+    summary = __doc__.split('\n', maxsplit=1)[0]
     usage = __doc__
 
     def __init__(self, name):

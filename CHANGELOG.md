@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.6.0 2022-11-03
+
+* Updates pylint configuration to latest version and fixes several warnings
+
+## v5.4.0 2022-09-12
+
+* Internal release: Switches Python environment from Python 3.6 to Python 3.8 and updating deployment scripts
+
 ## v5.1.0 2022-04-07
 
 * Support for Python 3

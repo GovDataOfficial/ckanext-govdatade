@@ -8,16 +8,16 @@ import sys
 from ckan import model
 from ckan.plugins.toolkit import CkanCommand
 from ckan.plugins import toolkit as tk
-import ckanext.govdatade.commands.command_util as command_util
+from ckanext.govdatade.commands import command_util
 
 LOGGER = logging.getLogger(__name__)
 
 
 class Purge(CkanCommand):
-    # pylint: disable=R0903
+    # pylint: disable=too-few-public-methods
     '''Purges datasets.'''
 
-    summary = __doc__.split('\n')[0]
+    summary = __doc__.split('\n', maxsplit=1)[0]
 
     def __init__(self, name):
         super(Purge, self).__init__(name)
