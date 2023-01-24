@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.9.0 2023-01-23
+
+* Removes version strings from the development dependencies `isort` and `httpretty`
+
 ## v5.6.0 2022-11-03
 
 * Updates pylint configuration to latest version and fixes several warnings
