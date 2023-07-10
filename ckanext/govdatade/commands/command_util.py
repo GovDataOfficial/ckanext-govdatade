@@ -15,6 +15,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from ckan import model
 from ckan.plugins import toolkit as tk
+from ckanext.activity.model import Activity
 from ckanext.govdatade import util
 from ckanext.govdatade.validators import link_checker
 
@@ -189,6 +190,7 @@ def delete_deprecated_datasets(dataset_ids):
                 redis_client.delete(redis_id)
                 LOGGER.info('Deleted deprecated broken links information for dataset %s from Redis',
                             six.text_type(redis_id))
+
 def check_remote_host(endpoint):
     '''
     check if remote host is available
@@ -290,10 +292,10 @@ def delete_activities(days_to_subtract):
     print('INFO [%s]: START deleting activities...' % _format_date_string(starttime))
     try:
         # Query all activities to delete
-        query = model.Session.query(model.Activity)\
-            .join(model.User, model.User.id == model.Activity.user_id)\
+        query = model.Session.query(Activity)\
+            .join(model.User, model.User.id == Activity.user_id)\
             .filter(model.User.name == 'harvest')\
-            .filter(model.Activity.timestamp < date_limit_string)
+            .filter(Activity.timestamp < date_limit_string)
 
         rows_to_delete_count = query.count()
         print("DEBUG Activity deleting count: %s " % rows_to_delete_count)
@@ -305,14 +307,6 @@ def delete_activities(days_to_subtract):
             _process_result_state(success_count, rows_to_delete_count, 'Activity')
 
         model.Session.flush()
-        # delete obsolete activity_details
-        activity_details_deleted_count = model.Session.query(model.ActivityDetail)\
-            .filter(model.ActivityDetail.activity_id.is_(None))\
-            .delete()
-
-        print("DEBUG Activity_details deleted count: %d " % activity_details_deleted_count)
-        success_count += activity_details_deleted_count
-
         model.repo.commit()
     except Exception as error:
         model.Session.rollback()

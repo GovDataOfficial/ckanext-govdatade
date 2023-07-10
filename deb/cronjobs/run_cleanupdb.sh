@@ -6,7 +6,6 @@ ip=$(echo $IP_MASTER | tr -d '\r')
 if [ $? -eq 0 ]; then
   logger "Start GovData clean up db"
   /usr/lib/ckan/env/bin/ckan --config=/etc/ckan/default/production.ini cleanupdb activities
-  /usr/lib/ckan/env/bin/ckan --config=/etc/ckan/default/production.ini cleanupdb revisions
   logger "Finished GovData clean up db"
 else
   logger "Host isn't master host"

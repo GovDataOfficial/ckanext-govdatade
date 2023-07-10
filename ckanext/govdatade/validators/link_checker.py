@@ -5,6 +5,7 @@ Module for checking link availability of CKAN resources.
 '''
 from datetime import datetime
 import ast
+import ckan.plugins.toolkit as tk
 import json
 import logging
 import socket
@@ -31,20 +32,18 @@ class LinkChecker(object):
 
         self.redis_client = redis.StrictRedis(
             host=config.get('ckanext.govdata.validators.redis.host'),
-            port=int(config.get('ckanext.govdata.validators.redis.port')),
-            db=int(config.get('ckanext.govdata.validators.redis.database')),
+            port=tk.asint(config.get('ckanext.govdata.validators.redis.port')),
+            db=tk.asint(config.get('ckanext.govdata.validators.redis.database')),
             decode_responses=True
         )
 
-        timeout_config_string = config.get('ckanext.govdata.validators.linkchecker.timeout')
-        if timeout_config_string is not None:
-            try:
-                timeout_config = int(timeout_config_string)
-                self.default_timeout = timeout_config
-                self.logger.debug('Using timeout (s): %s', self.default_timeout)
-            except ValueError:
-                self.logger.debug('Timeout in configuration is not an integer: %s', timeout_config_string)
-                self.logger.debug('Using default timeout (s): %s', self.default_timeout)
+        try:
+            timeout_config = tk.asint(config.get('ckanext.govdata.validators.linkchecker.timeout'))
+            self.default_timeout = timeout_config
+            self.logger.debug('Using timeout (s): %s', self.default_timeout)
+        except (TypeError, ValueError) as ex:
+            self.logger.debug('LinkChecker: Error while retrieving timeout from configuration: %s', six.text_type(ex))
+            self.logger.debug('Using default timeout (s): %s', self.default_timeout)
 
     def process_record(self, dataset):
         '''

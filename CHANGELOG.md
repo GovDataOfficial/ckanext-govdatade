@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.13.0 2023-05-04
+
+* Adds support for CKAN 2.10.0
+
 ## v5.9.0 2023-01-23
 
 * Removes version strings from the development dependencies `isort` and `httpretty`

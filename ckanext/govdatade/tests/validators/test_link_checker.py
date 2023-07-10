@@ -5,8 +5,7 @@ import unittest
 import httpretty
 from ckan.plugins import toolkit as tk
 from ckanext.govdatade.validators.link_checker import LinkChecker
-from mock import Mock
-
+from mock import Mock, patch
 
 class TestLinkChecker(unittest.TestCase):
 
@@ -25,7 +24,24 @@ class TestLinkChecker(unittest.TestCase):
 
     def test_is_available_404(self):
         assert not self.link_checker.is_available(400)
-    
+
+    @patch.dict("ckan.plugins.toolkit.config", {'ckanext.govdata.validators.linkchecker.timeout': '68'})
+    def test_default_timeout_valid_integer(self):
+        link_checker = LinkChecker(tk.config)
+        self.assertTrue(link_checker.default_timeout == 68)
+
+    @patch.dict("ckan.plugins.toolkit.config", {'ckanext.govdata.validators.linkchecker.timeout': 'InvalidInteger'})
+    def test_default_timeout_invalid_integer(self):
+        link_checker = LinkChecker(tk.config)
+        # Default value of timeout
+        self.assertTrue(link_checker.default_timeout == 15)
+
+    @patch.dict("ckan.plugins.toolkit.config", {})
+    def test_default_timeout_None(self):
+        link_checker = LinkChecker(tk.config)
+        # Default value of timeout
+        self.assertTrue(link_checker.default_timeout == 15)
+
     def test_legacy_data_loading(self):
         testdict = {
             'a test': 'dict',
