@@ -8,7 +8,6 @@ from collections import defaultdict
 from datetime import datetime
 import distutils.dir_util
 from math import ceil
-import six
 
 import ckanapi
 import ckan.logic as logic
@@ -89,9 +88,9 @@ def normalize_api_dataset(dataset):
 
     if 'extras' in dataset and isinstance(dataset['extras'], dict):
         extras = []
-        for key, value in six.iteritems(dataset['extras']):
+        for key, value in dataset['extras'].items():
             value_string = value
-            if not isinstance(value, six.string_types):
+            if not isinstance(value, str):
                 value_string = json.dumps(value)
             extras.append({'key': key, 'value': value_string})
 
@@ -122,12 +121,12 @@ def normalize_extras(source):
     '''
     if isinstance(source, dict):
         result = {}
-        for key, value in six.iteritems(source):
+        for key, value in source.items():
             result[key] = normalize_extras(value)
         return result
     elif isinstance(source, list):
         return [normalize_extras(item) for item in source]
-    elif isinstance(source, six.string_types) and is_valid(source):
+    elif isinstance(source, str) and is_valid(source):
         return normalize_extras(json.loads(source))
     return source
 
@@ -221,7 +220,7 @@ def is_valid(source):
             return True
         if isinstance(value, list):
             return True
-        if isinstance(value, six.string_types):
+        if isinstance(value, str):
             return True
     except ValueError:
         pass
@@ -260,7 +259,7 @@ def generate_link_checker_data(data):
         if checker.SCHEMA_RECORD_KEY not in record or not record[checker.SCHEMA_RECORD_KEY]:
             continue
 
-        for dummy_url, entry in six.iteritems(record[checker.SCHEMA_RECORD_KEY]):
+        for dummy_url, entry in record[checker.SCHEMA_RECORD_KEY].items():
             if isinstance(entry['status'], int):
                 entry['status'] = 'HTTP %s' % entry['status']
 
@@ -271,7 +270,7 @@ def generate_link_checker_data(data):
             data['entries'][portal].append(record)
 
     lc_stats = data['linkchecker']
-    lc_stats['broken'] = sum(six.itervalues(data['portals']))
+    lc_stats['broken'] = sum(data['portals'].values())
     lc_stats['working'] = num_metadata - lc_stats['broken']
 
     LOGGER.info('Link checker data: working: %s, broken %s', lc_stats['working'], lc_stats['broken'])
@@ -307,7 +306,7 @@ def amend_portal(portal):
     '''
     Amend the given portal string.
     '''
-    portal = six.text_type(portal)
+    portal = str(portal)
 
     mapping = [(':', '-'), ('/', '-'), ('.', '-'),
                ('&', '-'), ('?', '-'), ('=', '-')]

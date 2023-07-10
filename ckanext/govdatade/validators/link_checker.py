@@ -9,7 +9,6 @@ import ckan.plugins.toolkit as tk
 import json
 import logging
 import socket
-import six
 import redis
 import requests
 
@@ -42,7 +41,7 @@ class LinkChecker(object):
             self.default_timeout = timeout_config
             self.logger.debug('Using timeout (s): %s', self.default_timeout)
         except (TypeError, ValueError) as ex:
-            self.logger.debug('LinkChecker: Error while retrieving timeout from configuration: %s', six.text_type(ex))
+            self.logger.debug('LinkChecker: Error while retrieving timeout from configuration: %s', str(ex))
             self.logger.debug('Using default timeout (s): %s', self.default_timeout)
 
     def process_record(self, dataset):
@@ -86,7 +85,7 @@ class LinkChecker(object):
                     )
                 else:
                     delete = delete or self.record_failure(
-                        dataset, url, six.text_type(request_error)
+                        dataset, url, str(request_error)
                     )
             except socket.timeout:
                 delete = delete or self.record_failure(
@@ -133,7 +132,7 @@ class LinkChecker(object):
 
         if self.has_redirection_to_404_page(response):
             self.logger.debug(
-                'Redirect ends in HTTP status code %s', six.text_type(requests.codes.not_found)
+                'Redirect ends in HTTP status code %s', str(requests.codes.not_found)
             )
             return requests.codes.not_found
         # if method HEAD is not allowed try again with http method GET
@@ -148,7 +147,7 @@ class LinkChecker(object):
             )
 
         self.logger.debug(
-            'HTTP status code: %s', six.text_type(response.status_code)
+            'HTTP status code: %s', str(response.status_code)
         )
         return response.status_code
 
@@ -201,7 +200,7 @@ class LinkChecker(object):
         Adds a non available URL to the Redis dataset
         '''
 
-        self.logger.debug('Record failure with error (code) %s.', six.text_type(status))
+        self.logger.debug('Record failure with error (code) %s.', str(status))
 
         portal = None
         if 'extras' in dataset and \

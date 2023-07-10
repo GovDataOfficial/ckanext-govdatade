@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.0 2023-07-05
+
+* Removes support for old CKAN versions prior 2.9 and Python 2
+
 ## v5.13.0 2023-05-04
 
 * Adds support for CKAN 2.10.0

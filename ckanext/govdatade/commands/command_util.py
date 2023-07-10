@@ -10,7 +10,6 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-import six
 from jinja2 import Environment, FileSystemLoader
 
 from ckan import model
@@ -37,7 +36,7 @@ def check_package_search_params(psfp_args):
                 splitted = psfp_arg.split(':', 1)
                 if len(splitted) != 2:
                     raise ValueError
-            package_search_filter_params = ' '.join(six.text_type(psfp_arg) for psfp_arg in psfp_args)
+            package_search_filter_params = ' '.join(str(psfp_arg) for psfp_arg in psfp_args)
             return package_search_filter_params
         except ValueError:
             print('ERROR: One or more package search filter params are not of the required' \
@@ -53,7 +52,7 @@ def delete_datasets(dry_run, package_search_filter_params, admin_user):
     package_ids_to_delete = _gather_dataset_ids(package_search_filter_params)
     endtime = time.time()
     print("INFO: %s datasets found for deletion. Total time: %s." % \
-            (len(package_ids_to_delete), six.text_type(endtime - starttime)))
+            (len(package_ids_to_delete), str(endtime - starttime)))
 
     if dry_run:
         print("INFO: DRY-RUN: The dataset deletion is disabled.")
@@ -67,17 +66,17 @@ def delete_datasets(dry_run, package_search_filter_params, admin_user):
                 _delete(package_id, admin_user)
                 checkpoint_end = time.time()
                 print("DEBUG: Deleted dataset with id %s. Time taken for deletion: %s." % \
-                            (package_id, six.text_type(checkpoint_end - checkpoint_start)))
+                            (package_id, str(checkpoint_end - checkpoint_start)))
                 success_count += 1
             except Exception as error:
                 print('ERROR: While deleting dataset with id %s. Details: %s' % \
-                    (package_id, six.text_type(error)))
+                    (package_id, str(error)))
                 error_count += 1
 
         endtime = time.time()
         print('=============================================================')
         print("INFO: %s datasets successfully deleted. %s datasets couldn't deleted. Total time: %s." % \
-                (success_count, error_count, six.text_type(endtime - starttime)))
+                (success_count, error_count, str(endtime - starttime)))
 
 def _delete(dataset_ref, admin_user):
     '''Deletes the dataset with the given ID.'''
@@ -100,7 +99,7 @@ def _gather_dataset_ids(package_search_filter_params):
         result = package_search({}, query_object)
         datasets = result["results"]
         count += len(datasets)
-        print("DEBUG: offset: %s, count: %s" % (six.text_type(offset), six.text_type(count)))
+        print("DEBUG: offset: %s, count: %s" % (str(offset), str(count)))
         offset += ROWS
 
         if count != 0:
@@ -133,16 +132,16 @@ def purge_deleted_datasets(path_to_logfile, admin_user):
             # Log to file and command line
             _log_deleted_packages_in_file(package_object, checkpoint_end, path_to_logfile)
             print("DEBUG: Purged dataset with id %s and name %s. Time taken for purging: %s." % \
-                        (package_id, package_object.name, six.text_type(checkpoint_end-checkpoint_start)))
+                        (package_id, package_object.name, str(checkpoint_end-checkpoint_start)))
             success_count += 1
         except Exception as error:
-            print('ERROR: While purging dataset with id %s. Details: %s' % (package_id, six.text_type(error)))
+            print('ERROR: While purging dataset with id %s. Details: %s' % (package_id, str(error)))
             error_count += 1
 
     endtime = time.time()
     print('=============================================================')
     print("INFO: %s datasets successfully purged. %s datasets couldn't purged. Total time: %s." % \
-                (success_count, error_count, six.text_type(endtime-starttime)))
+                (success_count, error_count, str(endtime-starttime)))
 
 def _purge(dataset_ref, admin_user):
     '''Purges the dataset with the given ID.'''
@@ -189,7 +188,7 @@ def delete_deprecated_datasets(dataset_ids):
             if (record is not None) and (redis_id != 'general'):
                 redis_client.delete(redis_id)
                 LOGGER.info('Deleted deprecated broken links information for dataset %s from Redis',
-                            six.text_type(redis_id))
+                            str(redis_id))
 
 def check_remote_host(endpoint):
     '''
@@ -248,7 +247,6 @@ def _render_template(template_file, data):
 
     environment = Environment(loader=FileSystemLoader(template_dir))
     environment.globals.update(amend_portal=util.amend_portal)
-    environment.globals.update(six=six)
 
     data['ckan_api_url'] = tk.config.get('ckan.api.url.portal')
     data['govdata_detail_url'] = tk.config.get(
@@ -310,12 +308,12 @@ def delete_activities(days_to_subtract):
         model.repo.commit()
     except Exception as error:
         model.Session.rollback()
-        print('ERROR while deleting activities! Details: %s' % six.text_type(error))
+        print('ERROR while deleting activities! Details: %s' % str(error))
 
     endtime = time.time()
     print('=============================================================')
     print("INFO [%s]: Totally deleted rows: %d. Total time: %s." % \
-                (_format_date_string(endtime), success_count, six.text_type(endtime - starttime)))
+                (_format_date_string(endtime), success_count, str(endtime - starttime)))
 
 
 def _process_result_state(success_count, rows_to_delete_count, object_type):

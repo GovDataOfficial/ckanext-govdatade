@@ -46,12 +46,12 @@
   <div class="row">
     <div class="col-md-12">
       <ul class="nav nav-pills">
-        {% for portal, records in six.iteritems(entries) %}
+        {% for portal, records in entries.items() %}
           <li class="{{ "active" if loop.index == 1 }}"><a href="#{{ amend_portal(portal) }}" data-toggle="tab">{{ portal }}</a></li>
         {% endfor %}
       </ul>
       <div class="tab-content">
-        {% for portal, records in six.iteritems(entries) %}
+        {% for portal, records in entries.items() %}
           <div id="{{ amend_portal(portal) }}" class="tab-pane {{ "active" if loop.index == 1 }}">
             <input class="search" placeholder="Filtern" />
             <table class="analysis table table-bordered">
@@ -67,7 +67,7 @@
               </thead>
               <tbody class="list">
                 {% for record in records %}
-                  {% for url, analysis in six.iteritems(record['urls']) %}
+                  {% for url, analysis in record['urls'].items() %}
                     <tr>
                       <td><a href="{{ govdata_detail_url }}/{{ record['id'] }}" class="id" target="_blank">{{ record['id'] }}</a></td>
                       <td class="name">{{ record['name'] }}</td>

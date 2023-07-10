@@ -35,8 +35,6 @@ ckan.plugins = govdatade
 ## Command line interface
 The following operations can be run from the command line as described underneath:
 
-ON CKAN >= 2.9:
-
     (pyenv) $ ckan --config=/etc/ckan/default/production.ini cleanupdb activities
 
     (pyenv) $ ckan --config=/etc/ckan/default/production.ini delete datasets title:"to delete"
@@ -46,18 +44,6 @@ ON CKAN >= 2.9:
     (pyenv) $ ckan --config=/etc/ckan/default/production.ini linkchecker
 
     (pyenv) $ ckan --config=/etc/ckan/default/production.ini report
-
-ON CKAN <= 2.8:
-
-    (pyenv) $ paster --plugin=ckanext-govdatade cleanupdb activities --config=/etc/ckan/default/production.ini
-
-    (pyenv) $ paster --plugin=ckanext-govdatade delete datasets title:"to delete" --config=/etc/ckan/default/production.ini
-
-    (pyenv) $ paster --plugin=ckanext-govdatade purge deleted --config=/etc/ckan/default/production.ini
-
-    (pyenv) $ paster --plugin=ckanext-govdatade linkchecker --config=/etc/ckan/default/production.ini
-
-    (pyenv) $ paster --plugin=ckanext-govdatade report --config=/etc/ckan/default/production.ini
 
 The commands should be run with the pyenv activated and refer to your CKAN configuration file.
 

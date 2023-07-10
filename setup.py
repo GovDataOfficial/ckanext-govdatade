@@ -2,7 +2,7 @@ import sys, os
 
 from setuptools import setup, find_packages
 
-VERSION = '5.13.0'
+VERSION = '6.0.0'
 
 with open('base-requirements.txt') as f:
     required = [line.strip() for line in f]
@@ -29,15 +29,5 @@ setup(
     """
     [ckan.plugins]
     govdatade=ckanext.govdatade.plugins:GovDataDePlugin
-
-    [paste.paster_command]
-    linkchecker = ckanext.govdatade.commands.linkchecker:LinkChecker
-    report = ckanext.govdatade.commands.report:Report
-    purge = ckanext.govdatade.commands.purge:Purge
-    cleanupdb = ckanext.govdatade.commands.cleanupdb:CleanUpDb
-    delete = ckanext.govdatade.commands.delete:Delete
-
-    [nose.plugins]
-    pylons = pylons.test:PylonsPlugin
     """,
 )

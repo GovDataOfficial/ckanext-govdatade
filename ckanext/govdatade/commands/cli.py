@@ -6,7 +6,6 @@ import json
 import os
 
 import click
-import six
 from ckan import model
 from ckan.logic import get_action
 from ckan.plugins import toolkit as tk
@@ -119,7 +118,7 @@ def linkchecker(args):
                 active_datasets.add(dataset['id'])
             except Exception as ex:
                 click.echo(u'LinkChecker: Error while processing dataset {}. Details: {}'.format(
-                    six.text_type(dataset['id']), six.text_type(ex)))
+                    str(dataset['id']), str(ex)))
 
         command_util.delete_deprecated_datasets(active_datasets)
         general = {'num_datasets': num_datasets}
@@ -193,11 +192,11 @@ def _check_options(dry_run_option):
     ''' Check if options are valid '''
     dry_run = True
     if dry_run_option:
-        if six.text_type(dry_run).lower() not in ('yes', 'true', 'no', 'false'):
+        if str(dry_run).lower() not in ('yes', 'true', 'no', 'false'):
             tk.error_shout(u'Value \'%s\' for dry-run is not a boolean!' \
-                       % six.text_type(dry_run_option))
+                       % str(dry_run_option))
             raise click.Abort()
-        elif six.text_type(dry_run).lower() in ('no', 'false'):
+        elif str(dry_run).lower() in ('no', 'false'):
             dry_run = False
     return dry_run
 
@@ -211,7 +210,7 @@ def _check_option_days(older_than_days):
             days_to_subtract = int(older_than_days)
         except ValueError:
             tk.error_shout(u'ERROR Value \'{}\' for days is not a number!'.format(
-                six.text_type(older_than_days)))
+                str(older_than_days)))
             raise click.Abort()
     else:
         click.echo('INFO Using default of {} days.'.format(days_to_subtract))

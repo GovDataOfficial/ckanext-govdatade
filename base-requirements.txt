@@ -5,4 +5,3 @@ ckanapi>=4
 strict-rfc3339==0.5
 redis
 pyparsing<3
-six==1.16.0
