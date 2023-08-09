@@ -2,7 +2,6 @@ httpretty
 pylint>=1.4
 mock
 isort
-lazy-object-proxy!=1.7.0 # Python 2.7 requirement is wrong
 
 factory-boy>=2
 pytest-cov
