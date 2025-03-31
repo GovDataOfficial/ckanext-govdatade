@@ -1,5 +1,8 @@
 # Changelog
 
+## v6.9.0 2025-03-24
+* Fixes dry-run option for CKAN command `delete`
+
 ## v6.1.0 2023-08-01
 
 * Updates and cleans up dependencies

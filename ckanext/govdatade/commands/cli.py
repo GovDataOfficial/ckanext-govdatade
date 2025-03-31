@@ -192,11 +192,11 @@ def _check_options(dry_run_option):
     ''' Check if options are valid '''
     dry_run = True
     if dry_run_option:
-        if str(dry_run).lower() not in ('yes', 'true', 'no', 'false'):
+        if str(dry_run_option).lower() not in ('yes', 'true', 'no', 'false'):
             tk.error_shout(u'Value \'%s\' for dry-run is not a boolean!' \
                        % str(dry_run_option))
             raise click.Abort()
-        elif str(dry_run).lower() in ('no', 'false'):
+        elif str(dry_run_option).lower() in ('no', 'false'):
             dry_run = False
     return dry_run
 
