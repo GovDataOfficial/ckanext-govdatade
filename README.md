@@ -13,7 +13,7 @@ $ cd /path/to/virtualenv
 $ /path/to/virtualenv/bin/pip install -e git+git://github.com/GovDataOfficial/ckanext-govdatade.git#egg=ckanext-govdatade
 $ cd src/ckanext-govdatade
 $ /path/to/virtualenv/bin/pip install -r base-requirements.txt -f requirements
-$ python setup.py develop
+$ python -m pip install -e .
 ```
 
 or
@@ -24,7 +24,7 @@ $ cd /path/to/virtualenv
 $ /path/to/virtualenv/bin/pip install -e git+git://gitlab.opencode.de/fitko/govdata/ckanext-govdatade.git#egg=ckanext-govdatade
 $ cd src/ckanext-govdatade
 $ /path/to/virtualenv/bin/pip install -r base-requirements.txt -f requirements
-$ python setup.py develop
+$ python -m pip install -e .
 ```
 
 Add the following plugins to your CKAN configuration file:

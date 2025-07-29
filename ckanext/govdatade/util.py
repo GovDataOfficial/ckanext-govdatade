@@ -237,8 +237,9 @@ def generate_link_checker_data(data):
     redis = checker.redis_client
 
     if redis.get('general') is None:
-        error_message = "Redis key '{redis_key}' not set".format(
-            redis_key='general'
+        error_message = (
+            "Redis key '{redis_key}' not set. Try to execute the linkchecker first, this will probably help."
+            .format(redis_key='general')
         )
         LOGGER.error(error_message)
         raise LookupError(error_message)

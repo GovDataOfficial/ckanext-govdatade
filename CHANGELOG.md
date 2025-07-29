@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.10.0 2025-07-28
+
+* Adds hint to error message for CKAN command `report`
+
 ## v6.9.0 2025-03-24
 * Fixes dry-run option for CKAN command `delete`
 
