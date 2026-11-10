@@ -1,10 +1,16 @@
 # Changelog
 
+## v6.11.0 2026-11-05
+
+* Adds support for CKAN 2.11
+* Replaces `nose.tools.raises` with `unittest.assertRaises` for Python 3.10 compatibility
+
 ## v6.10.0 2025-07-28
 
 * Adds hint to error message for CKAN command `report`
 
 ## v6.9.0 2025-03-24
+
 * Fixes dry-run option for CKAN command `delete`
 
 ## v6.1.0 2023-08-01

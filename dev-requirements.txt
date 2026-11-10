@@ -1,4 +1,4 @@
-httpretty
+responses
 pylint>=1.4
 mock
 isort

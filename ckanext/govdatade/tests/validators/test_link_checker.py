@@ -2,7 +2,7 @@ import datetime
 import json
 import unittest
 
-import httpretty
+import responses
 from ckan.plugins import toolkit as tk
 from ckanext.govdatade.validators.link_checker import LinkChecker
 from mock import Mock, patch
@@ -81,13 +81,13 @@ class TestLinkChecker(unittest.TestCase):
         records = self.link_checker.get_records()
         self.assertTrue(len(records) == 1)
 
-    @httpretty.activate
+    @responses.activate
     def test_process_record(self):
         url1 = 'http://example.com/dataset/1'
         url2 = 'http://example.com/dataset/2'
 
-        httpretty.register_uri(httpretty.HEAD, url1, status=200)
-        httpretty.register_uri(httpretty.HEAD, url2, status=404)
+        responses.add(responses.HEAD, url1, status=200)
+        responses.add(responses.HEAD, url2, status=404)
 
         dataset_id = '1'
         dataset = {
@@ -102,14 +102,14 @@ class TestLinkChecker(unittest.TestCase):
         self.assertNotIn(url1, record['urls'])
         self.assertEqual(record['urls'][url2]['strikes'], 1)
 
-    @httpretty.activate
+    @responses.activate
     def test_process_record_deprecated_urls(self):
         # prepare (1)
         url1 = 'http://example.com/dataset/1'
         url2 = 'http://example.com/dataset/2'
 
-        httpretty.register_uri(httpretty.HEAD, url1, status=404)
-        httpretty.register_uri(httpretty.HEAD, url2, status=404)
+        responses.add(responses.HEAD, url1, status=404)
+        responses.add(responses.HEAD, url2, status=404)
 
         dataset_id = '1'
         dataset = {
@@ -143,12 +143,12 @@ class TestLinkChecker(unittest.TestCase):
         self.assertEqual(record['urls'][url2]['strikes'], 1) # normally expected 2
         self.assertEqual(record['urls'][url2]['status'], 404)
 
-    @httpretty.activate
+    @responses.activate
     def test_process_record_deprecated_urls_all_active(self):
         # prepare
         url1 = 'http://example.com/dataset/1'
 
-        httpretty.register_uri(httpretty.HEAD, url1, status=200)
+        responses.add(responses.HEAD, url1, status=200)
 
         dataset_id = '1'
         dataset = {
@@ -164,12 +164,12 @@ class TestLinkChecker(unittest.TestCase):
         record = self.link_checker.redis_client.get(dataset_id)
         self.assertIsNone(record)
 
-    @httpretty.activate
+    @responses.activate
     def test_process_record_deprecated_urls_all_active_with_existent_record(self):
         # prepare
         url1 = 'http://example.com/dataset/1'
 
-        httpretty.register_uri(httpretty.HEAD, url1, status=200)
+        responses.add(responses.HEAD, url1, status=200)
 
         dataset_id = '1'
         dataset_name = 'example'
@@ -193,82 +193,80 @@ class TestLinkChecker(unittest.TestCase):
         record_actual = json.loads(self.link_checker.redis_client.get(dataset_id))
         self.assertDictEqual(record_actual, initial_record)
 
-    @httpretty.activate
+    @responses.activate
     def test_check_url_200(self):
         httpretty.HTTPretty.allow_net_connect = False
         url = 'http://example.com/dataset/1'
-        httpretty.register_uri(httpretty.HEAD, url, status=200)
+        responses.add(responses.HEAD, url, status=200)
 
         expectation = 200
         assert self.link_checker.validate(url) == expectation
-        self.assertTrue(httpretty.has_request())
+        self.assertTrue(responses.calls)
 
-    @httpretty.activate
+    @responses.activate
     def test_check_url_404(self):
         httpretty.HTTPretty.allow_net_connect = False
         url = 'http://example.com/dataset/1'
-        httpretty.register_uri(httpretty.HEAD, url, status=404)
+        responses.add(responses.HEAD, url, status=404)
 
         expectation = 404
         assert self.link_checker.validate(url) == expectation
-        self.assertTrue(httpretty.has_request())
+        self.assertTrue(responses.calls)
 
-    @httpretty.activate
+    @responses.activate
     def test_check_url_301(self):
         httpretty.HTTPretty.allow_net_connect = False
         url = 'http://example.com/dataset/1'
         target = 'http://www.example.com/dataset/1'
 
-        httpretty.register_uri(httpretty.HEAD, target, status=200)
-        httpretty.register_uri(httpretty.HEAD, url,
-                               status=301, location=target)
+        responses.add(responses.HEAD, target, status=200)
+        responses.add(responses.HEAD, url,
+                      status=301,
+                      headers={'Location': target})
 
         expectation = 200
         assert self.link_checker.validate(url) == expectation
-        self.assertTrue(httpretty.has_request())
+        self.assertTrue(responses.calls)
 
-    @httpretty.activate
+    @responses.activate
     def test_check_url_405(self):
-        httpretty.HTTPretty.allow_net_connect = False
         url = 'http://example.com/dataset/1'
-        httpretty.register_uri(httpretty.HEAD, url, status=405)
-        httpretty.register_uri(httpretty.GET, url, status=200)
+        responses.add(responses.HEAD, url, status=405)
+        responses.add(responses.GET, url, status=200)
 
         expectation = 200
         assert self.link_checker.validate(url) == expectation
-        self.assertTrue(httpretty.has_request())
+        self.assertTrue(responses.calls)
 
-    @httpretty.activate
+    @responses.activate
     def test_check_url_400(self):
-        httpretty.HTTPretty.allow_net_connect = False
         url = 'http://example.com/dataset/1'
-        httpretty.register_uri(httpretty.HEAD, url, status=400)
-        httpretty.register_uri(httpretty.GET, url, status=200)
+        responses.add(responses.HEAD, url, status=400)
+        responses.add(responses.GET, url, status=200)
 
         expectation = 200
         assert self.link_checker.validate(url) == expectation
-        self.assertTrue(httpretty.has_request())
+        self.assertTrue(responses.calls)
 
-    @httpretty.activate
+    @responses.activate
     def test_check_url_statistik_sachsen(self):
-        httpretty.HTTPretty.allow_net_connect = False
         url = 'http://statistik.sachsen.de/dataset/1'
-        httpretty.register_uri(httpretty.HEAD, url, status=200)
+        responses.add(responses.HEAD, url, status=200)
 
         expectation = 200
         assert self.link_checker.validate(url) == expectation
-        self.assertTrue(httpretty.has_request())
+        self.assertTrue(responses.calls)
 
-    @httpretty.activate
+    @responses.activate
     def test_check_dataset(self):
         url1 = 'http://example.com/dataset/1'
-        httpretty.register_uri(httpretty.HEAD, url1, status=200)
+        responses.add(responses.HEAD, url1, status=200)
 
         url2 = 'http://example.com/dataset/2'
-        httpretty.register_uri(httpretty.HEAD, url2, status=404)
+        responses.add(responses.HEAD, url2, status=404)
 
         url3 = 'http://example.com/dataset/3'
-        httpretty.register_uri(httpretty.HEAD, url3, status=200)
+        responses.add(responses.HEAD, url3, status=200)
 
         dataset = {'id': '1',
                    'name': 'example',
